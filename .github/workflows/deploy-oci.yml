@@ -70,7 +70,7 @@ jobs:
             trap 'rm -rf "$RELEASE_DIR" /tmp/ivrm-stats-release.tar.gz' EXIT
             tar -xzf /tmp/ivrm-stats-release.tar.gz -C "$RELEASE_DIR"
             cd "$RELEASE_DIR"
-            ./scripts/deploy-oci.sh
+            bash ./scripts/deploy-oci.sh
           REMOTE
 
       - name: Production smoke test
