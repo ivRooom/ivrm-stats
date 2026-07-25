@@ -1,6 +1,14 @@
 name: Deploy to OCI
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "index.html"
+      - "assets/**"
+      - "scripts/**"
+      - ".github/workflows/deploy-oci.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,6 +22,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +32,8 @@ jobs:
         run: |
           python3 scripts/validate.py
           node --check assets/app.js
+          bash -n scripts/deploy-oci.sh
+          bash -n scripts/rollback-oci.sh
 
       - name: Configure SSH
         env:
@@ -34,14 +46,18 @@ jobs:
           printf '%s\n' "$OCI_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Package release
+        run: |
+          tar -czf /tmp/ivrm-stats-release.tar.gz \
+            index.html assets scripts/validate.py scripts/deploy-oci.sh scripts/rollback-oci.sh
+
       - name: Upload release files
         env:
           OCI_HOST: ${{ secrets.OCI_HOST }}
           OCI_USER: ${{ secrets.OCI_USER }}
         run: |
-          tar -czf /tmp/ivrm-stats-release.tar.gz \
-            index.html assets scripts/validate.py scripts/deploy-oci.sh scripts/rollback-oci.sh
-          scp /tmp/ivrm-stats-release.tar.gz "${OCI_USER}@${OCI_HOST}:/tmp/ivrm-stats-release.tar.gz"
+          scp /tmp/ivrm-stats-release.tar.gz \
+            "${OCI_USER}@${OCI_HOST}:/tmp/ivrm-stats-release.tar.gz"
 
       - name: Deploy on OCI
         env:
@@ -55,6 +71,17 @@ jobs:
             tar -xzf /tmp/ivrm-stats-release.tar.gz -C "$RELEASE_DIR"
             cd "$RELEASE_DIR"
             ./scripts/deploy-oci.sh
-            curl -fsS https://stats.ivrm.jp/ >/dev/null
-            curl -fsS https://stats.ivrm.jp/api/current.json >/dev/null
           REMOTE
+
+      - name: Production smoke test
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --max-time 15 \
+              https://stats.ivrm.jp/ >/dev/null \
+              && curl --fail --silent --show-error --max-time 15 \
+              https://stats.ivrm.jp/api/current.json >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
