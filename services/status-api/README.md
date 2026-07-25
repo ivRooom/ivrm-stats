@@ -19,8 +19,10 @@ export STATUS_DB_PATH=/tmp/ivrm-status.db
 export HERTA_INGEST_SECRET=local-development-secret-32-characters
 export MINECRAFT_CURRENT_PATH=/tmp/current.json
 export MINECRAFT_HISTORY_PATH=/tmp/history.json
-uvicorn app.main:app --reload --port 8080
+uvicorn app.main:create_app --factory --reload --port 8080
 ```
+
+アプリケーションファクトリを使用するため、モジュールimport時にはSQLiteや`/data`へアクセスしません。本番コンテナではComposeから`STATUS_DB_PATH=/data/status.db`を渡します。
 
 ## テスト
 
