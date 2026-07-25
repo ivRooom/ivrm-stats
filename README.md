@@ -67,7 +67,7 @@ GitHub Environment `production` と、次のSecretsを設定します。
 ## OCIへ手動デプロイ
 
 ```bash
-./scripts/deploy-oci.sh
+bash scripts/deploy-oci.sh
 ```
 
 既存UIは次へ退避されます。
@@ -79,5 +79,5 @@ GitHub Environment `production` と、次のSecretsを設定します。
 ロールバック：
 
 ```bash
-./scripts/rollback-oci.sh /opt/ivrm/www/stats.ui-backup-YYYYMMDD-HHMMSS
+bash scripts/rollback-oci.sh /opt/ivrm/www/stats.ui-backup-YYYYMMDD-HHMMSS
 ```
