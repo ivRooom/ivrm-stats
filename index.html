@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ja" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090d16" />
+    <meta name="description" content="ivRooom Minecraft server status dashboard" />
+    <title>IVRM Status Console</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a" aria-hidden="true"></div>
+    <div class="ambient ambient-b" aria-hidden="true"></div>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#overview" aria-label="IVRM Status Console ホーム">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M6 8.5 16 3l10 5.5v15L16 29 6 23.5z"/><path d="M6 8.5 16 14l10-5.5M16 14v15"/></svg>
+          </span>
+          <span>
+            <strong>IVRM</strong>
+            <small>STATUS CONSOLE</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <div class="global-status" id="globalStatus" role="status" aria-live="polite">
+            <span class="status-dot"></span>
+            <span>読み込み中</span>
+          </div>
+          <button class="icon-button" id="refreshButton" type="button" aria-label="データを更新">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+          </button>
+          <button class="icon-button" id="themeButton" type="button" aria-label="テーマを切り替え">
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero" id="overview">
+          <div class="hero-copy">
+            <p class="section-label">LIVE INFRASTRUCTURE</p>
+            <h1>サーバーの状態を、<br />迷わず判断できる画面へ。</h1>
+            <p class="hero-description">接続状況、負荷、バックアップ、実行環境を運用優先度順に整理しています。</p>
+          </div>
+
+          <div class="hero-meta">
+            <span class="eyebrow">LAST SYNC</span>
+            <strong id="lastUpdated">--:--:--</strong>
+            <span id="freshnessText">データ取得中</span>
+          </div>
+        </section>
+
+        <section class="server-banner" aria-labelledby="serverName">
+          <div class="server-identity">
+            <div class="server-emblem" aria-hidden="true">
+              <svg viewBox="0 0 48 48"><path d="m8 13 16-9 16 9v22l-16 9-16-9z"/><path d="m8 13 16 9 16-9M24 22v22"/></svg>
+            </div>
+            <div>
+              <div class="server-title-row">
+                <h2 id="serverName">サーバーを確認中</h2>
+                <span class="status-pill" id="serverStatusPill">CHECKING</span>
+              </div>
+              <p id="serverMode">--</p>
+            </div>
+          </div>
+
+          <div class="server-connect">
+            <span>CONNECTION</span>
+            <button class="copy-button" id="copyAddressButton" type="button">
+              <code id="serverAddress">mc.ivrm.jp</code>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+
+          <div class="player-gauge">
+            <div class="player-gauge-head">
+              <span>ONLINE PLAYERS</span>
+              <strong><b id="playersOnline">0</b><small> / <span id="playersMax">--</span></small></strong>
+            </div>
+            <div class="progress-track"><span id="playerProgress"></span></div>
+            <p id="playerNames">現在接続中のプレイヤーはいません</p>
+          </div>
+        </section>
+
+        <section class="metrics-grid" aria-label="主要メトリクス">
+          <article class="metric-card metric-primary">
+            <div class="metric-card-head">
+              <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 13h3l2-7 4 12 2-5h5"/></svg></span>
+              <span class="metric-trend" id="cpuTrend">LIVE</span>
+            </div>
+            <p>CPU使用率</p>
+            <strong id="cpuValue">--</strong>
+            <div class="mini-meter"><span id="cpuMeter"></span></div>
+            <small>コンテナ負荷</small>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-card-head">
+              <span class="metric-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg></span>
+              <span class="metric-trend" id="memoryTrend">LIVE</span>
+            </div>
+            <p>メモリ</p>
+            <strong id="memoryValue">--</strong>
+            <div class="mini-meter"><span id="memoryMeter"></span></div>
+            <small id="memoryDetail">--</small>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-card-head">
+              <span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg></span>
+              <span class="metric-trend stable">STABLE</span>
+            </div>
+            <p>コンテナ稼働</p>
+            <strong id="uptimeValue">--</strong>
+            <small id="hostUptime">ホスト稼働: --</small>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-card-head">
+              <span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM8 3h8v4M8 11h8M8 15h5"/></svg></span>
+              <span class="metric-trend stable" id="backupHealth">CHECK</span>
+            </div>
+            <p>最新バックアップ</p>
+            <strong id="backupSize">--</strong>
+            <small id="backupTime">取得時刻: --</small>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel chart-panel" id="history">
+            <header class="panel-header">
+              <div>
+                <p class="section-label">PERFORMANCE</p>
+                <h2>リソース推移</h2>
+              </div>
+              <div class="segmented-control" role="tablist" aria-label="表示メトリクス">
+                <button type="button" role="tab" aria-selected="true" data-metric="cpu">CPU</button>
+                <button type="button" role="tab" aria-selected="false" data-metric="memory">MEM</button>
+                <button type="button" role="tab" aria-selected="false" data-metric="players">PLAYERS</button>
+              </div>
+            </header>
+
+            <div class="chart-summary">
+              <div><span>現在値</span><strong id="chartCurrent">--</strong></div>
+              <div><span>平均</span><strong id="chartAverage">--</strong></div>
+              <div><span>最大</span><strong id="chartMax">--</strong></div>
+            </div>
+
+            <div class="chart-wrap">
+              <svg id="historyChart" viewBox="0 0 900 330" role="img" aria-labelledby="chartTitle chartDescription">
+                <title id="chartTitle">サーバーリソース推移</title>
+                <desc id="chartDescription">現在選択中のメトリクスの時系列グラフです。</desc>
+              </svg>
+              <div class="chart-empty" id="chartEmpty" hidden>履歴データを取得できませんでした</div>
+            </div>
+          </article>
+
+          <aside class="panel health-panel">
+            <header class="panel-header">
+              <div>
+                <p class="section-label">SYSTEM HEALTH</p>
+                <h2>運用ヘルス</h2>
+              </div>
+              <div class="health-score" id="healthScore">--</div>
+            </header>
+
+            <div class="health-ring-wrap">
+              <svg class="health-ring" viewBox="0 0 140 140" aria-hidden="true">
+                <circle class="health-ring-track" cx="70" cy="70" r="56" />
+                <circle class="health-ring-value" id="healthRing" cx="70" cy="70" r="56" />
+              </svg>
+              <div class="health-ring-copy"><strong id="healthRingValue">--</strong><span>HEALTH</span></div>
+            </div>
+
+            <div class="health-list">
+              <div class="health-item"><span class="health-indicator" id="serverHealthIndicator"></span><div><strong>ゲームサーバー</strong><small id="serverHealthText">確認中</small></div></div>
+              <div class="health-item"><span class="health-indicator" id="backupIndicator"></span><div><strong>S3バックアップ</strong><small id="backupTimerText">確認中</small></div></div>
+              <div class="health-item"><span class="health-indicator" id="collectorIndicator"></span><div><strong>Stats収集</strong><small id="collectorTimerText">確認中</small></div></div>
+              <div class="health-item"><span class="health-indicator" id="memoryIndicator"></span><div><strong>メモリ余力</strong><small id="memoryHealthText">確認中</small></div></div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="detail-grid" id="details">
+          <article class="panel detail-panel">
+            <header class="panel-header compact">
+              <div><p class="section-label">RUNTIME</p><h2>実行環境</h2></div>
+              <span class="panel-chip" id="activeContainer">--</span>
+            </header>
+            <dl class="detail-list">
+              <div><dt>Minecraft</dt><dd id="minecraftVersion">--</dd></div>
+              <div><dt>Java</dt><dd id="javaVersion">--</dd></div>
+              <div><dt>OS</dt><dd id="osVersion">--</dd></div>
+              <div><dt>CPU</dt><dd id="cpuModel">--</dd></div>
+              <div><dt>Docker</dt><dd id="dockerVersion">--</dd></div>
+              <div><dt>Kernel</dt><dd id="kernelVersion">--</dd></div>
+            </dl>
+          </article>
+
+          <article class="panel detail-panel">
+            <header class="panel-header compact">
+              <div><p class="section-label">SERVER POLICY</p><h2>ゲーム設定</h2></div>
+              <span class="panel-chip">READ ONLY</span>
+            </header>
+            <dl class="detail-list">
+              <div><dt>オンライン認証</dt><dd id="onlineMode">--</dd></div>
+              <div><dt>ホワイトリスト</dt><dd id="whitelist">--</dd></div>
+              <div><dt>最大人数</dt><dd id="maxPlayersSetting">--</dd></div>
+              <div><dt>難易度</dt><dd id="difficulty">--</dd></div>
+              <div><dt>描画距離</dt><dd id="viewDistance">--</dd></div>
+              <div><dt>飛行許可</dt><dd id="allowFlight">--</dd></div>
+            </dl>
+          </article>
+
+          <article class="panel detail-panel wide">
+            <header class="panel-header compact">
+              <div><p class="section-label">AUTOMATION</p><h2>自動運用</h2></div>
+              <span class="panel-chip">SYSTEMD</span>
+            </header>
+            <div class="automation-grid">
+              <div class="automation-card">
+                <span class="automation-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM8 3h8v4M8 11h8"/></svg></span>
+                <div><strong>バックアップ</strong><small id="backupTimerNext">次回: --</small></div>
+                <span class="automation-state" id="backupTimerState">--</span>
+              </div>
+              <div class="automation-card">
+                <span class="automation-icon"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14M7 7l10 10M17 7 7 17"/></svg></span>
+                <div><strong>Stats収集</strong><small id="collectorTimerNext">次回: --</small></div>
+                <span class="automation-state" id="collectorTimerState">--</span>
+              </div>
+              <div class="automation-card">
+                <span class="automation-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg></span>
+                <div><strong>ネットワーク</strong><small id="networkStats">--</small></div>
+                <span class="automation-state active">LIVE</span>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      <footer>
+        <span>IVRM STATUS CONSOLE</span>
+        <span>OCI / Docker / Minecraft</span>
+        <span id="footerTimestamp">Updated --</span>
+      </footer>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>
