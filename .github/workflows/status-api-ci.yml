@@ -54,15 +54,28 @@ jobs:
         run: python -m compileall -q app tests
 
       - name: Run tests
-        run: pytest -vv --tb=short --junitxml=pytest-results.xml
+        shell: bash
+        run: |
+          set +e
+          pytest -vv --tb=short --junitxml=pytest-results.xml > pytest-output.txt 2>&1
+          status=$?
+          if [[ $status -eq 0 ]]; then
+            tail -n 30 pytest-output.txt
+          else
+            echo "=== pytest failure summary ==="
+            tail -n 120 pytest-output.txt
+          fi
+          exit "$status"
 
-      - name: Upload pytest results
+      - name: Upload pytest diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: status-api-pytest-results
-          path: services/status-api/pytest-results.xml
-          if-no-files-found: warn
+          name: status-api-pytest-diagnostics
+          path: |
+            ${{ github.workspace }}/services/status-api/pytest-output.txt
+            ${{ github.workspace }}/services/status-api/pytest-results.xml
+          if-no-files-found: error
           retention-days: 7
 
       - name: Validate deployment scripts
