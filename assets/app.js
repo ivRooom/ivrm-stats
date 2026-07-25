@@ -1,116 +1,89 @@
-const state = {
-  current: null,
-  history: [],
-  metric: "cpu",
-  refreshing: false,
-  refreshTimer: null,
-};
-
-const $ = (id) => document.getElementById(id);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
-
-const API = {
+const ENDPOINTS = {
+  publicStatus: "/api/status.json",
   current: "/api/current.json",
   history: "/api/history.json",
 };
 
-function createDemoCurrent() {
-  const now = new Date();
-  return {
-    collected_at: now.toISOString(),
-    status: "online",
-    active_container: "mc-gtnh",
-    server: {
-      name: "GT New Horizons",
-      mode: "GTNH 2.8.4 / GregTech Expert",
-      connection: "mc.ivrm.jp",
-    },
-    players: { online: 0, max: 5, names: [] },
-    resources: {
-      docker_cpu: "2.42%",
-      docker_memory: "4.683GiB / 9GiB",
-      docker_net: "142kB / 685kB",
-      docker_block: "1.56GB / 2.5GB",
-      host_memory: "6.0GiB / 10GiB",
-      load_average: "0.38, 0.29, 0.21",
-    },
-    uptime: { container: "12時間 8分", host: "54日 2時間" },
-    versions: {
-      minecraft: "Minecraft 1.7.10 / GTNH 2.8.4",
-      java: "openjdk version 21.0.11 LTS",
-    },
-    runtime: {
-      os: "Oracle Linux Server 9.7",
-      kernel: "Linux 5.15 ARM64",
-      cpu_model: "Ampere Altra",
-      docker: "28.3.2",
-      docker_compose: "2.39.1",
-    },
-    settings: {
-      "online-mode": "true",
-      "white-list": "true",
-      "max-players": "5",
-      "allow-flight": "true",
-      "view-distance": "6",
-      difficulty: "normal",
-    },
-    backup: {
-      latest_local: {
-        file: "minecraft-gtnh-demo.tar.gz",
-        size: "444M",
-        mtime: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString(),
-      },
-    },
-    timers: {
-      "mc-backup-s3.timer": { active: "active", next: "03:00 / 15:00" },
-      "mc-stats-collector.timer": { active: "active", next: "60秒ごと" },
-    },
-    demo: true,
-  };
+const REFRESH_INTERVAL_MS = 60_000;
+const STALE_AFTER_SECONDS = 300;
+
+const state = {
+  snapshot: null,
+  refreshTimer: null,
+  countdownTimer: null,
+  nextRefreshAt: 0,
+  refreshing: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+const STATUS_PRIORITY = {
+  operational: 0,
+  maintenance: 1,
+  degraded: 2,
+  outage: 3,
+  unknown: 4,
+};
+
+const STATUS_COPY = {
+  operational: "正常稼働",
+  maintenance: "メンテナンス中",
+  degraded: "一部影響あり",
+  outage: "障害発生中",
+  unknown: "確認中",
+};
+
+const OVERALL_COPY = {
+  operational: {
+    eyebrow: "ALL SYSTEMS OPERATIONAL",
+    title: "すべてのシステムは正常です",
+    message: "現在、ivRooomのサービスに利用者影響のある障害は確認されていません。",
+  },
+  maintenance: {
+    eyebrow: "SCHEDULED MAINTENANCE",
+    title: "メンテナンスを実施しています",
+    message: "一部サービスで予定されたメンテナンスを実施しています。",
+  },
+  degraded: {
+    eyebrow: "PARTIAL SERVICE IMPACT",
+    title: "一部サービスに影響があります",
+    message: "サービスは利用できますが、一部機能で遅延や不安定な状態を確認しています。",
+  },
+  outage: {
+    eyebrow: "SERVICE DISRUPTION",
+    title: "サービス障害が発生しています",
+    message: "現在、利用者影響のある障害を確認しています。復旧状況はこのページで更新します。",
+  },
+  unknown: {
+    eyebrow: "STATUS UNAVAILABLE",
+    title: "最新の状態を確認できません",
+    message: "ステータスデータの取得に失敗しました。時間をおいて再度ご確認ください。",
+  },
+};
+
+function normalizeStatus(value) {
+  const status = String(value || "unknown").toLowerCase();
+  if (["online", "ok", "healthy", "up"].includes(status)) return "operational";
+  if (["warning", "partial", "degraded_performance"].includes(status)) return "degraded";
+  if (["maintenance", "scheduled_maintenance"].includes(status)) return "maintenance";
+  if (["offline", "down", "major_outage", "critical"].includes(status)) return "outage";
+  return Object.hasOwn(STATUS_PRIORITY, status) ? status : "unknown";
 }
 
-function createDemoHistory() {
-  const now = Date.now();
-  return Array.from({ length: 72 }, (_, index) => {
-    const wave = Math.sin(index / 7) * 3.2 + Math.sin(index / 2.9) * 1.1;
-    return {
-      collected_at: new Date(now - (71 - index) * 20 * 60 * 1000).toISOString(),
-      status: "online",
-      players_online: index % 19 === 0 ? 1 : 0,
-      players_max: 5,
-      cpu_percent: `${Math.max(1.2, 6 + wave).toFixed(2)}%`,
-      memory_usage: `${(4.58 + index * 0.002).toFixed(3)}GiB / 9GiB (${(50.8 + index * 0.025).toFixed(1)}%)`,
-    };
-  });
+function worstStatus(statuses) {
+  return statuses.reduce((worst, status) => {
+    const normalized = normalizeStatus(status);
+    return STATUS_PRIORITY[normalized] > STATUS_PRIORITY[worst] ? normalized : worst;
+  }, "operational");
 }
 
-function parseNumber(value, fallback = 0) {
-  const match = String(value ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
-  return match ? Number(match[0]) : fallback;
-}
-
-function parsePercent(value, fallback = 0) {
-  return Math.max(0, Math.min(100, parseNumber(value, fallback)));
-}
-
-function parseMemoryPercent(value) {
-  const percentMatch = String(value ?? "").match(/\((\d+(?:\.\d+)?)%\)/);
-  if (percentMatch) return Number(percentMatch[1]);
-
-  const values = String(value ?? "").match(/(\d+(?:\.\d+)?)\s*(GiB|MiB)\s*\/\s*(\d+(?:\.\d+)?)\s*(GiB|MiB)/i);
-  if (!values) return 0;
-
-  const used = toGiB(Number(values[1]), values[2]);
-  const total = toGiB(Number(values[3]), values[4]);
-  return total > 0 ? (used / total) * 100 : 0;
-}
-
-function toGiB(value, unit) {
-  return String(unit).toLowerCase() === "mib" ? value / 1024 : value;
-}
-
-function formatPercent(value) {
-  return `${Number(value || 0).toFixed(value >= 10 ? 1 : 2)}%`;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function formatDateTime(value, includeSeconds = false) {
@@ -128,18 +101,7 @@ function formatDateTime(value, includeSeconds = false) {
 }
 
 function formatTime(value) {
-  if (!value) return "--:--:--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "--:--:--";
-  return new Intl.DateTimeFormat("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function formatHistoryTime(value) {
+  if (!value) return "--:--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--:--";
   return new Intl.DateTimeFormat("ja-JP", {
@@ -150,375 +112,330 @@ function formatHistoryTime(value) {
 }
 
 function secondsSince(value) {
+  if (!value) return Infinity;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return Infinity;
   return Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
 }
 
 function freshnessLabel(seconds) {
-  if (!Number.isFinite(seconds)) return "更新時刻を取得できません";
-  if (seconds < 60) return `${seconds}秒前に更新`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分前に更新`;
-  return `${Math.floor(seconds / 3600)}時間前に更新`;
+  if (!Number.isFinite(seconds)) return "更新時刻不明";
+  if (seconds < 60) return `${seconds}秒前`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分前`;
+  return `${Math.floor(seconds / 3600)}時間前`;
 }
 
-async function fetchJson(primary, fallbackFactory) {
-  const options = { cache: "no-store", headers: { Accept: "application/json" } };
-  const primaryResponse = await fetch(`${primary}?t=${Date.now()}`, options).catch(() => null);
-  if (primaryResponse?.ok) return primaryResponse.json();
-  return fallbackFactory();
-}
+async function fetchJson(url) {
+  const response = await fetch(`${url}?t=${Date.now()}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  }).catch(() => null);
 
-function setText(id, value, fallback = "--") {
-  const element = $(id);
-  if (element) element.textContent = value ?? fallback;
-}
-
-function setBoolean(id, value) {
-  const element = $(id);
-  if (!element) return;
-  const normalized = String(value).toLowerCase();
-  const isTrue = normalized === "true" || normalized === "on" || normalized === "active";
-  element.textContent = isTrue ? "有効" : normalized === "false" || normalized === "off" ? "無効" : value || "--";
-  element.classList.toggle("boolean-true", isTrue);
-  element.classList.toggle("boolean-false", !isTrue && normalized !== "");
-}
-
-function setWidth(id, percent) {
-  const element = $(id);
-  if (element) element.style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
-}
-
-function setStatusClass(element, status) {
-  if (!element) return;
-  element.classList.remove("online", "degraded", "offline");
-  element.classList.add(status);
-}
-
-function timerStatus(timer) {
-  const active = String(timer?.active ?? "").toLowerCase();
-  return active === "active" ? "active" : active || "unknown";
-}
-
-function renderCurrent(data) {
-  state.current = data;
-
-  const status = String(data.status || "offline").toLowerCase();
-  const collectedSeconds = secondsSince(data.collected_at);
-  const stale = collectedSeconds > 300;
-  const visualStatus = status === "online" && !stale ? "online" : status === "online" ? "degraded" : "offline";
-
-  const globalStatus = $("globalStatus");
-  setStatusClass(globalStatus, visualStatus);
-  globalStatus.querySelector("span:last-child").textContent = visualStatus === "online" ? "ALL SYSTEMS OPERATIONAL" : visualStatus === "degraded" ? "DATA DELAYED" : "SERVER OFFLINE";
-
-  const statusPill = $("serverStatusPill");
-  setStatusClass(statusPill, visualStatus);
-  statusPill.textContent = visualStatus === "online" ? "ONLINE" : visualStatus === "degraded" ? "STALE" : "OFFLINE";
-
-  setText("lastUpdated", formatTime(data.collected_at));
-  setText("freshnessText", freshnessLabel(collectedSeconds));
-  setText("footerTimestamp", `Updated ${formatDateTime(data.collected_at, true)}`);
-
-  setText("serverName", data.server?.name, "未起動");
-  setText("serverMode", data.server?.mode, "サーバー情報なし");
-  setText("serverAddress", data.server?.connection, "mc.ivrm.jp");
-  setText("activeContainer", data.active_container, "not-running");
-
-  const playersOnline = Number(data.players?.online || 0);
-  const playersMax = Number(data.players?.max || data.settings?.["max-players"] || 0);
-  setText("playersOnline", playersOnline);
-  setText("playersMax", playersMax || "--");
-  setWidth("playerProgress", playersMax > 0 ? (playersOnline / playersMax) * 100 : 0);
-  setText("playerNames", data.players?.names?.length ? data.players.names.join(" / ") : "現在接続中のプレイヤーはいません");
-
-  const cpu = parsePercent(data.resources?.docker_cpu);
-  const memory = parseMemoryPercent(data.resources?.docker_memory);
-  setText("cpuValue", formatPercent(cpu));
-  setText("memoryValue", formatPercent(memory));
-  setText("memoryDetail", data.resources?.docker_memory);
-  setWidth("cpuMeter", cpu);
-  setWidth("memoryMeter", memory);
-  setText("uptimeValue", data.uptime?.container);
-  setText("hostUptime", `ホスト稼働: ${data.uptime?.host || "--"}`);
-  setText("backupSize", data.backup?.latest_local?.size);
-  setText("backupTime", `取得時刻: ${formatDateTime(data.backup?.latest_local?.mtime)}`);
-  setText("backupHealth", data.backup?.latest_local ? "VERIFIED" : "MISSING");
-
-  setText("minecraftVersion", data.versions?.minecraft);
-  setText("javaVersion", data.versions?.java);
-  setText("osVersion", data.runtime?.os);
-  setText("cpuModel", data.runtime?.cpu_model);
-  setText("dockerVersion", data.runtime?.docker ? `${data.runtime.docker} / Compose ${data.runtime?.docker_compose || "--"}` : "--");
-  setText("kernelVersion", data.runtime?.kernel);
-
-  setBoolean("onlineMode", data.settings?.["online-mode"]);
-  setBoolean("whitelist", data.settings?.["white-list"]);
-  setText("maxPlayersSetting", data.settings?.["max-players"]);
-  setText("difficulty", data.settings?.difficulty);
-  setText("viewDistance", data.settings?.["view-distance"]);
-  setBoolean("allowFlight", data.settings?.["allow-flight"]);
-
-  setText("networkStats", data.resources?.docker_net || "--");
-
-  const backupTimer = data.timers?.["mc-backup-s3.timer"] || {};
-  const collectorTimer = data.timers?.["mc-stats-collector.timer"] || {};
-  const backupTimerActive = timerStatus(backupTimer) === "active";
-  const collectorTimerActive = timerStatus(collectorTimer) === "active";
-
-  setText("backupTimerState", backupTimerActive ? "ACTIVE" : "STOPPED");
-  setText("collectorTimerState", collectorTimerActive ? "ACTIVE" : "STOPPED");
-  setText("backupTimerNext", `次回: ${backupTimer.next || "--"}`);
-  setText("collectorTimerNext", `次回: ${collectorTimer.next || "--"}`);
-  $("backupTimerState").classList.toggle("active", backupTimerActive);
-  $("collectorTimerState").classList.toggle("active", collectorTimerActive);
-
-  const backupAge = secondsSince(data.backup?.latest_local?.mtime);
-  const backupOk = Boolean(data.backup?.latest_local) && backupAge < 60 * 60 * 24;
-  const memoryOk = memory < 75;
-  const memoryWarn = memory >= 75 && memory < 90;
-
-  updateHealthItem("serverHealthIndicator", visualStatus === "online" ? "ok" : visualStatus === "degraded" ? "warn" : "error", visualStatus === "online" ? "正常に応答しています" : visualStatus === "degraded" ? "データ更新が遅れています" : "応答を確認できません", "serverHealthText");
-  updateHealthItem("backupIndicator", backupOk && backupTimerActive ? "ok" : "warn", backupOk ? `最新: ${formatDateTime(data.backup?.latest_local?.mtime)}` : "24時間以内のバックアップなし", "backupTimerText");
-  updateHealthItem("collectorIndicator", collectorTimerActive && !stale ? "ok" : "warn", collectorTimerActive ? (stale ? "収集は有効ですがデータが遅延" : "定期収集が稼働中") : "タイマーが停止しています", "collectorTimerText");
-  updateHealthItem("memoryIndicator", memoryOk ? "ok" : memoryWarn ? "warn" : "error", `${formatPercent(memory)} 使用中`, "memoryHealthText");
-
-  let score = 100;
-  if (visualStatus === "degraded") score -= 18;
-  if (visualStatus === "offline") score -= 45;
-  if (!backupOk) score -= 15;
-  if (!backupTimerActive) score -= 10;
-  if (!collectorTimerActive || stale) score -= 12;
-  if (memory >= 90) score -= 20;
-  else if (memory >= 75) score -= 8;
-  score = Math.max(0, score);
-  renderHealthScore(score);
-}
-
-function updateHealthItem(indicatorId, level, text, textId) {
-  const indicator = $(indicatorId);
-  indicator.classList.remove("ok", "warn", "error");
-  indicator.classList.add(level);
-  setText(textId, text);
-}
-
-function renderHealthScore(score) {
-  const circumference = 2 * Math.PI * 56;
-  const offset = circumference * (1 - score / 100);
-  const ring = $("healthRing");
-  ring.style.strokeDashoffset = String(offset);
-  ring.style.stroke = score >= 85 ? "var(--success)" : score >= 65 ? "var(--warning)" : "var(--danger)";
-  setText("healthRingValue", score);
-  setText("healthScore", score >= 85 ? "HEALTHY" : score >= 65 ? "ATTENTION" : "CRITICAL");
-  $("healthScore").style.background = score >= 85 ? "var(--success-soft)" : score >= 65 ? "var(--warning-soft)" : "var(--danger-soft)";
-  $("healthScore").style.color = score >= 85 ? "var(--success)" : score >= 65 ? "var(--warning)" : "var(--danger)";
-}
-
-function normalizeHistory(history, metric) {
-  return history.map((row) => {
-    let value = 0;
-    if (metric === "cpu") value = parsePercent(row.cpu_percent);
-    if (metric === "memory") value = parseMemoryPercent(row.memory_usage);
-    if (metric === "players") value = Number(row.players_online || 0);
-    return {
-      time: row.collected_at,
-      label: formatHistoryTime(row.collected_at),
-      value,
-    };
-  }).filter((row) => Number.isFinite(row.value));
-}
-
-function renderChart(metric = state.metric) {
-  state.metric = metric;
-  const svg = $("historyChart");
-  const empty = $("chartEmpty");
-  const data = normalizeHistory(state.history, metric);
-
-  if (!data.length) {
-    svg.innerHTML = "";
-    empty.hidden = false;
-    setText("chartCurrent", "--");
-    setText("chartAverage", "--");
-    setText("chartMax", "--");
-    return;
-  }
-
-  empty.hidden = true;
-
-  const width = 900;
-  const height = 330;
-  const margin = { top: 26, right: 22, bottom: 44, left: 46 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const rawMax = Math.max(...data.map((row) => row.value), metric === "players" ? 1 : 10);
-  const maxValue = metric === "players" ? Math.max(rawMax, state.current?.players?.max || 1) : Math.ceil(rawMax / 10) * 10;
-  const x = (index) => margin.left + (plotWidth * index) / Math.max(1, data.length - 1);
-  const y = (value) => margin.top + plotHeight - (plotHeight * value) / Math.max(1, maxValue);
-
-  const points = data.map((row, index) => [x(index), y(row.value)]);
-  const path = smoothPath(points);
-  const areaPath = `${path} L ${points.at(-1)[0]} ${margin.top + plotHeight} L ${points[0][0]} ${margin.top + plotHeight} Z`;
-
-  const yTicks = [0, 0.25, 0.5, 0.75, 1];
-  const xTickIndexes = [...new Set([0, Math.floor((data.length - 1) / 2), data.length - 1])];
-  const suffix = metric === "players" ? "人" : "%";
-
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.26" />
-        <stop offset="78%" stop-color="var(--accent)" stop-opacity="0.015" />
-      </linearGradient>
-    </defs>
-    ${yTicks.map((ratio) => {
-      const tickY = margin.top + plotHeight - plotHeight * ratio;
-      const tickValue = maxValue * ratio;
-      return `<line class="chart-grid-line" x1="${margin.left}" y1="${tickY}" x2="${width - margin.right}" y2="${tickY}" />
-        <text class="chart-axis-label" x="${margin.left - 10}" y="${tickY + 4}" text-anchor="end">${formatTick(tickValue, metric)}</text>`;
-    }).join("")}
-    <path class="chart-area" d="${areaPath}" />
-    <path class="chart-path" d="${path}" />
-    ${points.length ? `<circle class="chart-dot" cx="${points.at(-1)[0]}" cy="${points.at(-1)[1]}" r="5" />` : ""}
-    ${xTickIndexes.map((index) => `<text class="chart-axis-label" x="${x(index)}" y="${height - 12}" text-anchor="${index === 0 ? "start" : index === data.length - 1 ? "end" : "middle"}">${data[index].label}</text>`).join("")}
-  `;
-
-  const values = data.map((row) => row.value);
-  const current = values.at(-1) || 0;
-  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const max = Math.max(...values);
-  setText("chartCurrent", `${formatMetricValue(current, metric)}${suffix}`);
-  setText("chartAverage", `${formatMetricValue(average, metric)}${suffix}`);
-  setText("chartMax", `${formatMetricValue(max, metric)}${suffix}`);
-
-  const first = values[0] || 0;
-  const delta = current - first;
-  const trendText = Math.abs(delta) < 0.05 ? "STABLE" : `${delta > 0 ? "+" : ""}${formatMetricValue(delta, metric)}${suffix}`;
-  setText(metric === "cpu" ? "cpuTrend" : metric === "memory" ? "memoryTrend" : "cpuTrend", trendText);
-}
-
-function formatTick(value, metric) {
-  return metric === "players" ? String(Math.round(value)) : `${Math.round(value)}%`;
-}
-
-function formatMetricValue(value, metric) {
-  return metric === "players" ? String(Math.round(value)) : Number(value).toFixed(value >= 10 ? 1 : 2);
-}
-
-function smoothPath(points) {
-  if (!points.length) return "";
-  if (points.length === 1) return `M ${points[0][0]} ${points[0][1]}`;
-  const line = points.reduce((path, point, index) => {
-    if (index === 0) return `M ${point[0]} ${point[1]}`;
-    const previous = points[index - 1];
-    const controlX = (previous[0] + point[0]) / 2;
-    return `${path} C ${controlX} ${previous[1]}, ${controlX} ${point[1]}, ${point[0]} ${point[1]}`;
-  }, "");
-  return line;
-}
-
-async function refreshData({ notify = false } = {}) {
-  if (state.refreshing) return;
-  state.refreshing = true;
-  $("refreshButton").classList.add("loading");
+  if (!response?.ok) return null;
 
   try {
-    const [current, history] = await Promise.all([
-      fetchJson(API.current, createDemoCurrent),
-      fetchJson(API.history, createDemoHistory),
-    ]);
-    state.history = Array.isArray(history) ? history : [];
-    renderCurrent(current);
-    renderChart(state.metric);
-    if (notify) showToast("最新データへ更新しました");
-  } catch (error) {
-    console.error(error);
-    setStatusClass($("globalStatus"), "offline");
-    $("globalStatus").querySelector("span:last-child").textContent = "API UNAVAILABLE";
-    showToast("ステータスAPIに接続できませんでした");
-  } finally {
-    state.refreshing = false;
-    $("refreshButton").classList.remove("loading");
-  }
-}
-
-function showToast(message) {
-  const toast = $("toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2400);
-}
-
-function readStoredTheme() {
-  try {
-    return localStorage.getItem("ivrm-stats-theme");
+    return await response.json();
   } catch {
     return null;
   }
 }
 
-function writeStoredTheme(theme) {
+function bucketHistory(history, bucketCount = 24) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return Array.from({ length: bucketCount }, () => "unknown");
+  }
+
+  const now = Date.now();
+  const bucketMs = 60 * 60 * 1000;
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const end = now - (bucketCount - 1 - index) * bucketMs;
+    const start = end - bucketMs;
+    const entries = history.filter((item) => {
+      const time = new Date(item.collected_at).getTime();
+      return Number.isFinite(time) && time > start && time <= end;
+    });
+
+    if (entries.length === 0) return "unknown";
+    return worstStatus(entries.map((entry) => entry.status));
+  });
+}
+
+function constantTimeline(status, bucketCount = 24) {
+  return Array.from({ length: bucketCount }, () => normalizeStatus(status));
+}
+
+function createFallbackSnapshot(current, history) {
+  if (!current) return null;
+
+  const collectedAt = current.collected_at || new Date().toISOString();
+  const stale = secondsSince(collectedAt) > STALE_AFTER_SECONDS;
+  const minecraftStatus = stale ? "degraded" : normalizeStatus(current.status);
+  const backupTimer = current.timers?.["mc-backup-s3.timer"] || {};
+  const backupAge = secondsSince(current.backup?.latest_local?.mtime);
+  const backupActive = String(backupTimer.active || "").toLowerCase() === "active";
+  const backupStatus = current.backup?.latest_local && backupAge < 86_400 && backupActive
+    ? "operational"
+    : current.backup?.latest_local
+      ? "degraded"
+      : "unknown";
+  const statusDataStatus = stale ? "degraded" : "operational";
+
+  const services = [
+    {
+      id: "minecraft-network",
+      group: "ゲームサービス",
+      name: "Minecraft Network",
+      description: current.server?.name
+        ? `${current.server.name} — ${current.server?.mode || "Minecraft Server"}`
+        : "Minecraftサーバー",
+      status: minecraftStatus,
+      timeline: bucketHistory(history),
+      meta: {
+        type: "minecraft",
+        connection: current.server?.connection || "mc.ivrm.jp",
+        playersOnline: Number(current.players?.online || 0),
+        playersMax: Number(current.players?.max || current.settings?.["max-players"] || 0),
+        mode: current.server?.mode || "Minecraft Server",
+      },
+    },
+    {
+      id: "status-data",
+      group: "プラットフォーム",
+      name: "Status Data",
+      description: "サービス状態を公開するリアルタイムデータフィード",
+      status: statusDataStatus,
+      timeline: constantTimeline(statusDataStatus),
+    },
+    {
+      id: "data-protection",
+      group: "プラットフォーム",
+      name: "Data Protection",
+      description: "ゲームデータのバックアップと保護",
+      status: backupStatus,
+      timeline: constantTimeline(backupStatus),
+    },
+  ];
+
+  return {
+    generated_at: collectedAt,
+    overall_status: worstStatus(services.map((service) => service.status)),
+    services,
+    incidents: [],
+    source: "legacy-adapter",
+  };
+}
+
+function normalizePublicSnapshot(data) {
+  const services = Array.isArray(data?.services)
+    ? data.services.map((service, index) => ({
+        id: service.id || `service-${index + 1}`,
+        group: service.group || "サービス",
+        name: service.name || "名称未設定",
+        description: service.description || "",
+        status: normalizeStatus(service.status),
+        timeline: Array.isArray(service.timeline)
+          ? service.timeline.slice(-24).map(normalizeStatus)
+          : constantTimeline(service.status),
+        meta: service.meta || {},
+      }))
+    : [];
+
+  services.forEach((service) => {
+    while (service.timeline.length < 24) service.timeline.unshift("unknown");
+  });
+
+  return {
+    generated_at: data?.generated_at || data?.collected_at || new Date().toISOString(),
+    overall_status: normalizeStatus(
+      data?.overall_status || (services.length ? worstStatus(services.map((service) => service.status)) : "unknown"),
+    ),
+    message: data?.message || "",
+    services,
+    incidents: Array.isArray(data?.incidents) ? data.incidents : [],
+    source: "public-status-api",
+  };
+}
+
+function statusIcon(id) {
+  if (id.includes("minecraft")) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 8-4 8 4v10l-8 4-8-4z"/><path d="m4 7 8 4 8-4M12 11v10"/></svg>';
+  }
+  if (id.includes("data") || id.includes("api")) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2Z"/><path d="M4 6v6c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12v6c0 1.1 3.6 2 8 2s8-.9 8-2v-6"/></svg>';
+  }
+  if (id.includes("backup") || id.includes("protection")) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>';
+}
+
+function renderServiceGroups(services) {
+  const container = $("serviceGroups");
+  if (!services.length) {
+    container.innerHTML = `<div class="empty-state"><span class="empty-state-icon" aria-hidden="true">${statusIcon("status")}</span><div><strong>サービス情報を取得できません</strong><p>しばらくしてから再度お試しください。</p></div></div>`;
+    return;
+  }
+
+  const grouped = services.reduce((groups, service) => {
+    const group = service.group || "サービス";
+    groups[group] ||= [];
+    groups[group].push(service);
+    return groups;
+  }, {});
+
+  container.innerHTML = Object.entries(grouped)
+    .map(([groupName, groupServices]) => `<article class="service-group"><header class="service-group-header"><h3>${escapeHtml(groupName)}</h3><span>${groupServices.length} service${groupServices.length === 1 ? "" : "s"}</span></header>${groupServices.map(renderServiceRow).join("")}</article>`)
+    .join("");
+}
+
+function renderServiceRow(service) {
+  const bars = (service.timeline.length ? service.timeline : constantTimeline(service.status))
+    .slice(-24)
+    .map((status, index) => `<span class="uptime-bar ${normalizeStatus(status)}" title="${index + 1}時間帯: ${STATUS_COPY[normalizeStatus(status)]}"></span>`)
+    .join("");
+
+  return `<div class="service-row"><div class="service-identity"><span class="service-icon">${statusIcon(service.id)}</span><div><strong>${escapeHtml(service.name)}</strong><p>${escapeHtml(service.description)}</p></div></div><div class="uptime-block" aria-label="${escapeHtml(service.name)}の直近24時間"><div class="uptime-bars">${bars}</div><div class="uptime-caption"><span>24時間前</span><span>現在</span></div></div><span class="service-state ${service.status}">${STATUS_COPY[service.status]}</span></div>`;
+}
+
+function renderMinecraftFeature(services) {
+  const service = services.find((item) => item.meta?.type === "minecraft" || item.id.includes("minecraft"));
+  const feature = $("minecraftFeature");
+
+  if (!service?.meta) {
+    feature.hidden = true;
+    return;
+  }
+
+  feature.hidden = false;
+  $("minecraftMode").textContent = service.meta.mode || service.description || "Minecraft Server";
+  $("playersOnline").textContent = Number(service.meta.playersOnline || 0);
+  $("playersMax").textContent = Number(service.meta.playersMax || 0) || "--";
+  $("serverAddress").textContent = service.meta.connection || "mc.ivrm.jp";
+}
+
+function renderIncidents(incidents) {
+  const container = $("incidentList");
+  const active = incidents.filter((incident) => !["resolved", "completed"].includes(String(incident.status || "").toLowerCase()));
+  const sorted = [...incidents].sort((a, b) => new Date(b.updated_at || b.started_at || 0) - new Date(a.updated_at || a.started_at || 0));
+
+  if (!sorted.length) {
+    container.innerHTML = '<div class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><strong>現在、掲載中の障害情報はありません</strong><p>利用者影響のある障害やメンテナンスが発生した場合、このページでお知らせします。</p></div></div>';
+    $("activeIncidentCount").textContent = "0";
+    return;
+  }
+
+  $("activeIncidentCount").textContent = String(active.length);
+  container.innerHTML = sorted.slice(0, 8).map((incident) => {
+    const impact = String(incident.impact || "minor").toLowerCase();
+    return `<article class="incident-card" data-impact="${escapeHtml(impact)}"><div class="incident-card-main"><span class="incident-icon" aria-hidden="true">${statusIcon("incident")}</span><div><strong>${escapeHtml(incident.title || "障害情報")}</strong><p>${escapeHtml(incident.message || incident.summary || "詳細を確認しています。")}</p></div></div><time datetime="${escapeHtml(incident.updated_at || incident.started_at || "")}">${formatDateTime(incident.updated_at || incident.started_at)}</time></article>`;
+  }).join("");
+}
+
+function render(snapshot) {
+  state.snapshot = snapshot;
+
+  const overall = snapshot?.overall_status || "unknown";
+  const copy = OVERALL_COPY[overall] || OVERALL_COPY.unknown;
+  const collectedSeconds = secondsSince(snapshot?.generated_at);
+
+  document.body.dataset.overallStatus = overall;
+  $("overallEyebrow").textContent = copy.eyebrow;
+  $("overallTitle").textContent = copy.title;
+  $("overallMessage").textContent = snapshot?.message?.trim() || copy.message;
+  $("lastUpdated").textContent = formatTime(snapshot?.generated_at);
+  $("freshnessText").textContent = freshnessLabel(collectedSeconds);
+  $("footerTimestamp").textContent = `Updated ${formatDateTime(snapshot?.generated_at, true)}`;
+
+  const services = snapshot?.services || [];
+  const operationalCount = services.filter((service) => service.status === "operational").length;
+  const activeIncidents = (snapshot?.incidents || []).filter((incident) => !["resolved", "completed"].includes(String(incident.status || "").toLowerCase()));
+
+  $("serviceCount").textContent = String(services.length);
+  $("operationalCount").textContent = `${operationalCount} / ${services.length}`;
+  $("activeIncidentCount").textContent = String(activeIncidents.length);
+
+  renderServiceGroups(services);
+  renderMinecraftFeature(services);
+  renderIncidents(snapshot?.incidents || []);
+}
+
+async function loadSnapshot() {
+  const publicStatus = await fetchJson(ENDPOINTS.publicStatus);
+  if (publicStatus?.services) return normalizePublicSnapshot(publicStatus);
+
+  const [current, history] = await Promise.all([
+    fetchJson(ENDPOINTS.current),
+    fetchJson(ENDPOINTS.history),
+  ]);
+  const historyArray = Array.isArray(history) ? history : Array.isArray(history?.history) ? history.history : [];
+  return createFallbackSnapshot(current, historyArray);
+}
+
+function showToast(message) {
+  const toast = $("toast");
+  toast.textContent = message;
+  toast.classList.add("visible");
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => toast.classList.remove("visible"), 2400);
+}
+
+async function refresh({ announce = false } = {}) {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  $("refreshButton").classList.add("loading");
+  $("refreshButton").disabled = true;
+
   try {
-    localStorage.setItem("ivrm-stats-theme", theme);
-  } catch {
-    // Storage can be unavailable in strict or embedded browsing contexts.
+    const snapshot = await loadSnapshot();
+    if (snapshot) {
+      render(snapshot);
+      if (announce) showToast("最新のステータスに更新しました");
+    } else {
+      render({ generated_at: new Date().toISOString(), overall_status: "unknown", services: [], incidents: [] });
+      if (announce) showToast("ステータスデータを取得できませんでした");
+    }
+  } finally {
+    state.refreshing = false;
+    $("refreshButton").classList.remove("loading");
+    $("refreshButton").disabled = false;
+    scheduleRefresh();
   }
 }
 
-function initializeTheme() {
-  const stored = readStoredTheme();
-  document.documentElement.dataset.theme = stored || "dark";
+function scheduleRefresh() {
+  window.clearTimeout(state.refreshTimer);
+  window.clearInterval(state.countdownTimer);
+  state.nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
+
+  const updateCountdown = () => {
+    const remaining = Math.max(0, Math.ceil((state.nextRefreshAt - Date.now()) / 1000));
+    $("nextRefresh").textContent = remaining > 0 ? `${remaining}秒後` : "更新中";
+  };
+
+  updateCountdown();
+  state.countdownTimer = window.setInterval(updateCountdown, 1000);
+  state.refreshTimer = window.setTimeout(() => refresh(), REFRESH_INTERVAL_MS);
 }
 
-function toggleTheme() {
-  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
-  document.documentElement.dataset.theme = next;
-  writeStoredTheme(next);
-  setTimeout(() => renderChart(state.metric), 0);
-}
+$("refreshButton")?.addEventListener("click", () => refresh({ announce: true }));
 
-async function copyAddress() {
-  const address = $("serverAddress").textContent.trim();
+$("copyAddressButton")?.addEventListener("click", async () => {
+  const address = $("serverAddress")?.textContent?.trim();
+  if (!address) return;
+
   try {
     await navigator.clipboard.writeText(address);
     showToast(`${address} をコピーしました`);
   } catch {
-    const textArea = document.createElement("textarea");
-    textArea.value = address;
-    textArea.style.position = "fixed";
-    textArea.style.opacity = "0";
-    document.body.append(textArea);
-    textArea.select();
-    document.execCommand("copy");
-    textArea.remove();
-    showToast(`${address} をコピーしました`);
+    showToast(`接続先: ${address}`);
   }
-}
+});
 
-function bindEvents() {
-  $("refreshButton").addEventListener("click", () => refreshData({ notify: true }));
-  $("themeButton").addEventListener("click", toggleTheme);
-  $("copyAddressButton").addEventListener("click", copyAddress);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.snapshot && secondsSince(state.snapshot.generated_at) > 120) {
+    refresh();
+  }
+});
 
-  $$("[data-metric]").forEach((button) => {
-    button.addEventListener("click", () => {
-      $$("[data-metric]").forEach((item) => item.setAttribute("aria-selected", String(item === button)));
-      renderChart(button.dataset.metric);
-    });
-  });
-
-  window.addEventListener("resize", debounce(() => renderChart(state.metric), 160));
-}
-
-function debounce(fn, wait) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
-  };
-}
-
-initializeTheme();
-bindEvents();
-refreshData();
-state.refreshTimer = window.setInterval(refreshData, 60_000);
+refresh();
