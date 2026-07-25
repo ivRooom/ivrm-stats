@@ -21,6 +21,7 @@ class DocumentInspector(HTMLParser):
         self.has_lang = False
         self.has_title = False
         self.has_viewport = False
+        self.has_main = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
@@ -28,15 +29,13 @@ class DocumentInspector(HTMLParser):
             self.has_lang = True
         if tag == "meta" and values.get("name") == "viewport":
             self.has_viewport = True
+        if tag == "main":
+            self.has_main = True
         element_id = values.get("id")
         if element_id:
             if element_id in self.ids:
                 self.duplicate_ids.add(element_id)
             self.ids.add(element_id)
-
-    def handle_data(self, data: str) -> None:
-        if self.get_starttag_text() is None and data.strip():
-            return
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -60,9 +59,10 @@ if not errors:
         errors.append("index.html must include a title")
     if not inspector.has_viewport:
         errors.append("index.html must include a viewport meta tag")
+    if not inspector.has_main:
+        errors.append("index.html must include a main element")
     if inspector.duplicate_ids:
         errors.append(f"duplicate ids: {', '.join(sorted(inspector.duplicate_ids))}")
-
 
 if errors:
     print("Validation failed:")
@@ -70,4 +70,4 @@ if errors:
         print(f"- {error}")
     sys.exit(1)
 
-print("Static dashboard validation passed.")
+print("Public status page validation passed.")
