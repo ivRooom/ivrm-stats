@@ -1,0 +1,21 @@
+stats.ivrm.jp {
+    handle /api/internal/status-ingest {
+        reverse_proxy status-api:8080
+    }
+
+    handle /api/status.json {
+        reverse_proxy status-api:8080
+    }
+
+    handle {
+        root * /srv/stats
+        encode zstd gzip
+        file_server
+
+        header {
+            X-Content-Type-Options nosniff
+            Referrer-Policy no-referrer
+            X-Frame-Options DENY
+        }
+    }
+}

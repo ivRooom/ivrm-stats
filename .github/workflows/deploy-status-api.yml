@@ -1,0 +1,132 @@
+name: Deploy Status API to OCI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "services/status-api/**"
+      - "deploy/status-api/**"
+      - "scripts/configure-caddy-status-api.sh"
+      - "scripts/deploy-status-api-oci.sh"
+      - ".github/workflows/deploy-status-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-ivrm-status-api
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.STATUS_API_AUTO_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: services/status-api/requirements-dev.txt
+
+      - name: Test status API
+        working-directory: services/status-api
+        run: |
+          python -m pip install --requirement requirements-dev.txt
+          pytest
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR on runner
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push linux/arm64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/status-api/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/ivrooom/ivrm-stats-api:${{ github.sha }}
+            ghcr.io/ivrooom/ivrm-stats-api:latest
+          cache-from: type=gha,scope=ivrm-stats-api
+          cache-to: type=gha,mode=max,scope=ivrm-stats-api
+
+      - name: Configure SSH
+        env:
+          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          OCI_KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$OCI_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$OCI_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package deployment files
+        run: |
+          tar -czf /tmp/ivrm-status-api-deploy.tar.gz \
+            deploy/status-api \
+            scripts/configure-caddy-status-api.sh \
+            scripts/deploy-status-api-oci.sh
+
+      - name: Upload deployment files
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+        run: |
+          scp /tmp/ivrm-status-api-deploy.tar.gz \
+            "${OCI_USER}@${OCI_HOST}:/tmp/ivrm-status-api-deploy.tar.gz"
+
+      - name: Log in to GHCR on OCI
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh "${OCI_USER}@${OCI_HOST}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+
+      - name: Deploy on OCI
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          ssh "${OCI_USER}@${OCI_HOST}" "IMAGE_TAG='${IMAGE_TAG}' bash -s" <<'REMOTE'
+            set -Eeuo pipefail
+            RELEASE_DIR="$(mktemp -d)"
+            trap 'rm -rf "$RELEASE_DIR" /tmp/ivrm-status-api-deploy.tar.gz; docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            tar -xzf /tmp/ivrm-status-api-deploy.tar.gz -C "$RELEASE_DIR"
+            cd "$RELEASE_DIR"
+            bash scripts/deploy-status-api-oci.sh "$IMAGE_TAG"
+          REMOTE
+
+      - name: Production smoke test
+        run: |
+          for attempt in 1 2 3 4 5; do
+            status_json="$(curl --fail --silent --show-error --max-time 15 https://stats.ivrm.jp/api/status.json || true)"
+            if [[ -n "$status_json" ]] \
+              && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <<<"$status_json"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
