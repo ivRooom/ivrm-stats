@@ -1,0 +1,60 @@
+name: Deploy to OCI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-stats-ivrm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate
+        run: |
+          python3 scripts/validate.py
+          node --check assets/app.js
+
+      - name: Configure SSH
+        env:
+          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          OCI_KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$OCI_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$OCI_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload release files
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+        run: |
+          tar -czf /tmp/ivrm-stats-release.tar.gz \
+            index.html assets scripts/validate.py scripts/deploy-oci.sh scripts/rollback-oci.sh
+          scp /tmp/ivrm-stats-release.tar.gz "${OCI_USER}@${OCI_HOST}:/tmp/ivrm-stats-release.tar.gz"
+
+      - name: Deploy on OCI
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+        run: |
+          ssh "${OCI_USER}@${OCI_HOST}" <<'REMOTE'
+            set -Eeuo pipefail
+            RELEASE_DIR="$(mktemp -d)"
+            trap 'rm -rf "$RELEASE_DIR" /tmp/ivrm-stats-release.tar.gz' EXIT
+            tar -xzf /tmp/ivrm-stats-release.tar.gz -C "$RELEASE_DIR"
+            cd "$RELEASE_DIR"
+            ./scripts/deploy-oci.sh
+            curl -fsS https://stats.ivrm.jp/ >/dev/null
+            curl -fsS https://stats.ivrm.jp/api/current.json >/dev/null
+          REMOTE
