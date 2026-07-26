@@ -56,6 +56,43 @@ class MinecraftSource:
             },
         )
 
+    def history_samples(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[tuple[datetime, PublicStatus]]:
+        raw_history = self._read_json(self.history_path)
+        items = (
+            raw_history
+            if isinstance(raw_history, list)
+            else raw_history.get("history", [])
+            if isinstance(raw_history, dict)
+            else []
+        )
+        samples: list[tuple[datetime, PublicStatus]] = []
+        seen: set[str] = set()
+
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                collected_at = self._parse_datetime(item.get("collected_at"))
+                if collected_at is None or collected_at < start or collected_at > end:
+                    continue
+                key = collected_at.isoformat()
+                seen.add(key)
+                samples.append((collected_at, self._normalize_status(item.get("status"))))
+
+        current = self._read_json(self.current_path)
+        if isinstance(current, dict):
+            collected_at = self._parse_datetime(current.get("collected_at"))
+            if collected_at is not None and start <= collected_at <= end:
+                key = collected_at.isoformat()
+                if key not in seen:
+                    samples.append((collected_at, self._normalize_status(current.get("status"))))
+
+        return sorted(samples, key=lambda sample: sample[0])
+
     def _unknown_service(self) -> PublicService:
         return PublicService(
             id="minecraft-network",
