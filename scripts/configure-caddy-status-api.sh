@@ -89,15 +89,21 @@ write_caddyfile_in_place() {
   sudo chmod 0644 "$target_file"
 }
 
+# docker cpはbind mount元の現在内容を参照し、実行中コンテナのmount namespaceが
+# 保持している古いinodeとの差異を見逃す場合がある。必ずコンテナ内プロセスから
+# catして、Caddyが実際に参照できる内容を取得する。
 copy_active_caddyfile() {
   : > "$ACTIVE_FILE"
-  docker cp "${CADDY_CONTAINER}:/etc/caddy/Caddyfile" "$ACTIVE_FILE"
+  if ! docker exec "$CADDY_CONTAINER" cat /etc/caddy/Caddyfile > "$ACTIVE_FILE"; then
+    echo "ERROR: Caddyコンテナ内の実行時Caddyfileを読み取れません。" >&2
+    return 1
+  fi
 }
 
 print_caddy_mount_diagnostics() {
   echo "Detected host Caddyfile: $CADDYFILE" >&2
   echo "Host SHA-256: $(sha256sum "$CADDYFILE" | awk '{print $1}')" >&2
-  echo "Container SHA-256: $(sha256sum "$ACTIVE_FILE" | awk '{print $1}')" >&2
+  echo "Runtime SHA-256: $(sha256sum "$ACTIVE_FILE" | awk '{print $1}')" >&2
   echo "Caddy mounts:" >&2
   docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2
 }
@@ -127,7 +133,8 @@ recreate_caddy_for_stale_bind_mount() {
   )
 
   for _attempt in {1..20}; do
-    if [[ "$(docker inspect "$CADDY_CONTAINER" --format '{{.State.Running}}' 2>/dev/null || true)" == "true" ]]; then
+    if [[ "$(docker inspect "$CADDY_CONTAINER" --format '{{.State.Running}}' 2>/dev/null || true)" == "true" ]] \
+      && docker exec "$CADDY_CONTAINER" test -r /etc/caddy/Caddyfile >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -154,12 +161,12 @@ if ! cmp -s "$CADDYFILE" "$ACTIVE_FILE"; then
 fi
 
 if ! cmp -s "$CADDYFILE" "$ACTIVE_FILE"; then
-  echo "ERROR: Caddy再作成後もホストとコンテナのCaddyfile内容が一致しません。" >&2
+  echo "ERROR: Caddy再作成後もホストとコンテナの実行時Caddyfile内容が一致しません。" >&2
   print_caddy_mount_diagnostics
   false
 fi
 if ! grep -Fq 'reverse_proxy @status_public status-api:8080' "$ACTIVE_FILE"; then
-  echo "ERROR: 更新したCaddyfileにStatus APIルートがありません。" >&2
+  echo "ERROR: 実行時CaddyfileにStatus APIルートがありません。" >&2
   echo "Detected host Caddyfile: $CADDYFILE" >&2
   false
 fi
