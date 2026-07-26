@@ -72,21 +72,23 @@ OCI上でローカルbuildは行いません。
 
 デプロイスクリプトはCaddyfileを同じinodeへ上書きし、次を検証してからreloadします。
 
-- ホスト側とコンテナ側のCaddyfileが同一内容
+- ホスト側と、Caddyコンテナ内プロセスから直接読み取った実行時Caddyfileが同一内容
 - Status APIのmatcherとupstreamがadapt後のJSONへ存在
 - `caddy validate`が成功
+
+`docker cp`では、単一ファイルbind mountの現在のホスト側内容を取得し、実行中コンテナが参照している古いinodeとの差異を検知できない場合がありました。そのため実行時検証では、`docker exec caddy cat /etc/caddy/Caddyfile`を使用します。
 
 過去のデプロイでCaddyfileのinodeがすでに置き換わっており、起動中コンテナが古いinodeを参照している場合は、同一inodeへの上書きだけでは復旧できません。
 
 その場合、スクリプトは次を行います。
 
-1. ホスト側とコンテナ側のSHA-256不一致を検出
+1. ホスト側と実行時CaddyfileのSHA-256不一致を検出
 2. CaddyコンテナのCompose作業ディレクトリとサービス名をラベルから取得
 3. `docker compose up -d --no-deps --force-recreate`でCaddyだけを一度再作成
 4. bind mountが現在のホストCaddyfileへ付け直されたことを再検証
 5. validateとreloadを続行
 
-Caddyの再作成中は、数秒程度HTTPS接続が切れる可能性があります。この自動復旧は、ホスト側とコンテナ側の内容が一致しない場合だけ実行されます。
+Caddyの再作成中は、数秒程度HTTPS接続が切れる可能性があります。この自動復旧は、ホスト側と実行時内容が一致しない場合だけ実行されます。
 
 手動確認：
 
