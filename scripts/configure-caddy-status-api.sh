@@ -2,18 +2,14 @@
 set -Eeuo pipefail
 
 CADDY_DIR="${CADDY_DIR:-/opt/ivrm/compose/caddy}"
-CADDYFILE="${CADDYFILE:-${CADDY_DIR}/Caddyfile}"
+REQUESTED_CADDYFILE="${CADDYFILE:-}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SNIPPET="${SOURCE_DIR}/deploy/status-api/Caddyfile.stats"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP="${CADDYFILE}.status-api-backup-${TIMESTAMP}"
 TEMP_FILE="$(mktemp)"
-trap 'rm -f "$TEMP_FILE"' EXIT
+ACTIVE_FILE="$(mktemp)"
+trap 'rm -f "$TEMP_FILE" "$ACTIVE_FILE"' EXIT
 
-if [[ ! -f "$CADDYFILE" ]]; then
-  echo "ERROR: Caddyfile not found: $CADDYFILE" >&2
-  exit 1
-fi
 if [[ ! -f "$SNIPPET" ]]; then
   echo "ERROR: status Caddy snippet not found: $SNIPPET" >&2
   exit 1
@@ -25,6 +21,29 @@ if [[ -z "$CADDY_CONTAINER" ]]; then
   exit 1
 fi
 
+if [[ -n "$REQUESTED_CADDYFILE" ]]; then
+  CADDYFILE="$REQUESTED_CADDYFILE"
+else
+  MOUNTED_CADDYFILE="$(docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}')"
+  MOUNTED_CADDYDIR="$(docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy"}}{{.Source}}{{end}}{{end}}')"
+
+  if [[ -n "$MOUNTED_CADDYFILE" ]]; then
+    CADDYFILE="$MOUNTED_CADDYFILE"
+  elif [[ -n "$MOUNTED_CADDYDIR" ]]; then
+    CADDYFILE="${MOUNTED_CADDYDIR}/Caddyfile"
+  else
+    CADDYFILE="${CADDY_DIR}/Caddyfile"
+    echo "WARNING: /etc/caddy/Caddyfileのホスト側マウント元を検出できませんでした。" >&2
+    echo "WARNING: 既定値を使用します: $CADDYFILE" >&2
+  fi
+fi
+
+if [[ ! -f "$CADDYFILE" ]]; then
+  echo "ERROR: Caddyfile not found: $CADDYFILE" >&2
+  exit 1
+fi
+
+BACKUP="${CADDYFILE}.status-api-backup-${TIMESTAMP}"
 sudo cp -a "$CADDYFILE" "$BACKUP"
 
 python3 - "$CADDYFILE" "$SNIPPET" "$TEMP_FILE" <<'PY'
@@ -66,9 +85,19 @@ rollback() {
 }
 trap rollback ERR
 
+docker cp "${CADDY_CONTAINER}:/etc/caddy/Caddyfile" "$ACTIVE_FILE"
+if ! grep -Fq 'reverse_proxy status-api:8080' "$ACTIVE_FILE"; then
+  echo "ERROR: 更新したホストCaddyfileがコンテナ内の/etc/caddy/Caddyfileへ反映されていません。" >&2
+  echo "Detected host Caddyfile: $CADDYFILE" >&2
+  echo "Caddy mounts:" >&2
+  docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2
+  false
+fi
+
 docker exec "$CADDY_CONTAINER" caddy validate --config /etc/caddy/Caddyfile
 docker exec "$CADDY_CONTAINER" caddy reload --config /etc/caddy/Caddyfile
 trap - ERR
 
 echo "Caddy status-api routes configured"
+echo "Active host Caddyfile: $CADDYFILE"
 echo "Backup: $BACKUP"
