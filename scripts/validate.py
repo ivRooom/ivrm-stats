@@ -16,6 +16,8 @@ REQUIRED_FILES = [
     ROOT / "assets" / "app.js",
     ROOT / "assets" / "history.css",
     ROOT / "assets" / "history.js",
+    ROOT / "assets" / "navigation.css",
+    ROOT / "assets" / "status-presentation.js",
 ]
 
 

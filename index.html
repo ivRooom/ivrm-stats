@@ -8,6 +8,7 @@
     <title>ivRooom Status</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/navigation.css" />
   </head>
   <body>
     <div class="page-glow page-glow-a" aria-hidden="true"></div>
@@ -19,7 +20,12 @@
           <span class="brand-copy"><strong>ivRooom</strong><span>Status</span></span>
         </a>
         <nav class="header-nav" aria-label="ステータスページナビゲーション"><a href="#services">サービス</a><a href="/history/">稼働履歴</a><a href="#incidents">障害情報</a></nav>
-        <button class="refresh-button" id="refreshButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg><span>更新</span></button>
+        <div class="header-actions">
+          <a class="header-page-link" href="/history/" aria-label="稼働履歴を見る">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><span>履歴</span>
+          </a>
+          <button class="refresh-button" id="refreshButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg><span>更新</span></button>
+        </div>
       </header>
       <main id="top">
         <section class="status-hero" aria-labelledby="overallTitle">
@@ -40,6 +46,13 @@
           <div class="summary-item"><span>進行中の障害</span><strong id="activeIncidentCount">--</strong></div>
           <div class="summary-item summary-item-wide"><span>データの鮮度</span><strong id="freshnessText">取得中</strong></div>
         </section>
+        <nav class="history-route" aria-label="稼働履歴ページへのリンク">
+          <a href="/history/">
+            <span class="history-route-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
+            <span class="history-route-copy"><small>STATUS HISTORY</small><strong>過去30日間の稼働履歴を見る</strong><span>サービスごとの日別状態と稼働率を確認できます。</span></span>
+            <span class="history-route-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></span>
+          </a>
+        </nav>
         <section class="section-block" id="services" aria-labelledby="servicesTitle">
           <div class="section-heading"><div><p class="section-label">SERVICES</p><h2 id="servicesTitle">サービス稼働状況</h2></div><p>各サービスの現在の状態と直近24時間の稼働傾向を表示します。</p></div>
           <div class="service-groups" id="serviceGroups" aria-live="polite"><div class="loading-skeleton" aria-hidden="true"><span></span><span></span><span></span></div></div>
@@ -60,5 +73,6 @@
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/assets/app.js"></script>
+    <script type="module" src="/assets/status-presentation.js"></script>
   </body>
 </html>
