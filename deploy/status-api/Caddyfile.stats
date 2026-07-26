@@ -1,21 +1,19 @@
 stats.ivrm.jp {
-    handle /api/internal/status-ingest {
-        reverse_proxy status-api:8080
-    }
+    route {
+        @status_ingest path /api/internal/status-ingest
+        reverse_proxy @status_ingest status-api:8080
 
-    handle /api/status.json {
-        reverse_proxy status-api:8080
-    }
-
-    handle {
-        root * /srv/stats
-        encode zstd gzip
-        file_server
+        @status_public path /api/status.json
+        reverse_proxy @status_public status-api:8080
 
         header {
             X-Content-Type-Options nosniff
             Referrer-Policy no-referrer
             X-Frame-Options DENY
         }
+
+        root * /srv/stats
+        encode zstd gzip
+        file_server
     }
 }
