@@ -8,12 +8,19 @@ COMPOSE_SOURCE="${SOURCE_DIR}/deploy/status-api/docker-compose.yml"
 ENV_FILE="${TARGET_DIR}/.env"
 IMAGE_ENV_FILE="${TARGET_DIR}/.image.env"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+DEPLOY_UID="$(id -u)"
+DEPLOY_GID="$(id -g)"
 
 if [[ ! -f "$COMPOSE_SOURCE" ]]; then
   echo "ERROR: compose file not found: $COMPOSE_SOURCE" >&2
   exit 1
 fi
-if [[ ! -f "$ENV_FILE" ]]; then
+
+# 初回設定時にroot所有で作成された場合でも、デプロイユーザーが
+# .envを参照し、docker composeを実行できるように親ディレクトリを整える。
+sudo install -d -m 0750 -o "$DEPLOY_UID" -g "$DEPLOY_GID" "$TARGET_DIR"
+
+if ! sudo test -f "$ENV_FILE"; then
   echo "ERROR: production secret file is missing: $ENV_FILE" >&2
   echo "Create it from deploy/status-api/.env.example before deployment." >&2
   exit 1
@@ -34,7 +41,6 @@ if [[ -z "$CADDY_NETWORK_NAME" ]]; then
   exit 1
 fi
 
-sudo install -d -m 0750 "$TARGET_DIR"
 sudo install -d -m 0750 -o 10001 -g 10001 "${TARGET_DIR}/data"
 if [[ -f "${TARGET_DIR}/docker-compose.yml" ]]; then
   sudo cp -a "${TARGET_DIR}/docker-compose.yml" "${TARGET_DIR}/docker-compose.yml.backup-${TIMESTAMP}"
@@ -42,7 +48,8 @@ fi
 sudo install -m 0644 "$COMPOSE_SOURCE" "${TARGET_DIR}/docker-compose.yml"
 printf 'IMAGE_TAG=%s\nCADDY_NETWORK_NAME=%s\n' "$IMAGE_TAG" "$CADDY_NETWORK_NAME" \
   | sudo tee "$IMAGE_ENV_FILE" >/dev/null
-sudo chown "$(id -u):$(id -g)" "$IMAGE_ENV_FILE" "$ENV_FILE"
+sudo chown "$DEPLOY_UID:$DEPLOY_GID" "$TARGET_DIR" "$IMAGE_ENV_FILE" "$ENV_FILE"
+sudo chmod 0750 "$TARGET_DIR"
 sudo chmod 0600 "$IMAGE_ENV_FILE" "$ENV_FILE"
 
 cd "$TARGET_DIR"
