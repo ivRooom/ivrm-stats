@@ -16,12 +16,14 @@ SQLite (/opt/ivrm/compose/ivrm-status-api/data/status.db)
 OCIでSecretファイルを作成します。
 
 ```bash
-sudo install -d -m 0750 /opt/ivrm/compose/ivrm-status-api
+sudo install -d -m 0750 -o opc -g opc /opt/ivrm/compose/ivrm-status-api
 sudo cp deploy/status-api/.env.example /opt/ivrm/compose/ivrm-status-api/.env
 sudo chown opc:opc /opt/ivrm/compose/ivrm-status-api/.env
 sudo chmod 600 /opt/ivrm/compose/ivrm-status-api/.env
 sudo vi /opt/ivrm/compose/ivrm-status-api/.env
 ```
+
+親ディレクトリもデプロイユーザーが参照できる必要があります。`root:root`かつ`0750`のままだと、`.env`自体が`opc:opc`でもGitHub Actionsから存在確認できません。
 
 `HERTA_INGEST_SECRET` は32文字以上のランダム値を設定します。Herta status-agent側にも同じ値を安全に登録します。
 
