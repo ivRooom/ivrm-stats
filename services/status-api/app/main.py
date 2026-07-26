@@ -5,7 +5,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -72,6 +72,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status.json")
     async def public_status() -> JSONResponse:
         response = status_service.public_status()
+        return JSONResponse(
+            status_code=200,
+            content=json.loads(response.model_dump_json()),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @app.get("/api/status-history.json")
+    async def public_history(days: int = Query(default=30, ge=1, le=30)) -> JSONResponse:
+        response = status_service.public_history(days=days)
         return JSONResponse(
             status_code=200,
             content=json.loads(response.model_dump_json()),
