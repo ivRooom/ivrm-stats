@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for item in index.html assets; do
+for item in index.html history assets; do
   if [[ ! -e "${SOURCE_DIR}/${item}" ]]; then
     echo "ERROR: missing ${SOURCE_DIR}/${item}" >&2
     exit 1
@@ -23,6 +23,7 @@ python3 "${SOURCE_DIR}/scripts/validate.py"
 
 mkdir -p "$RELEASE_DIR"
 cp -a "${SOURCE_DIR}/index.html" "$RELEASE_DIR/"
+cp -a "${SOURCE_DIR}/history" "$RELEASE_DIR/"
 cp -a "${SOURCE_DIR}/assets" "$RELEASE_DIR/"
 
 sudo mkdir -p "$TARGET_DIR"
