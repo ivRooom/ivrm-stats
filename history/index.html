@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07090d" />
+    <meta name="description" content="ivRooomが提供するサービスの過去30日間の稼働履歴を確認できます。" />
+    <title>稼働履歴 | ivRooom Status</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/history.css" />
+  </head>
+  <body>
+    <div class="page-glow page-glow-a" aria-hidden="true"></div>
+    <div class="page-glow page-glow-b" aria-hidden="true"></div>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="ivRooom Status トップへ戻る">
+          <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 36 36"><path d="M7 10.5 18 4l11 6.5v15L18 32 7 25.5z"/><path d="m7 10.5 11 6.5 11-6.5M18 17v15"/></svg></span>
+          <span class="brand-copy"><strong>ivRooom</strong><span>Status</span></span>
+        </a>
+        <nav class="header-nav" aria-label="ステータスページナビゲーション">
+          <a href="/">現在の状況</a>
+          <a href="/history/" aria-current="page">稼働履歴</a>
+        </nav>
+        <button class="refresh-button" id="refreshButton" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+          <span>更新</span>
+        </button>
+      </header>
+
+      <main id="top">
+        <section class="history-hero" aria-labelledby="historyTitle">
+          <div>
+            <p class="section-label">SERVICE HISTORY</p>
+            <h1 id="historyTitle">サービスの稼働履歴</h1>
+            <p>各サービスの状態を日単位で集約し、正常稼働率と影響のあった日を確認できます。</p>
+          </div>
+          <div class="history-range-control" aria-label="表示期間">
+            <span>表示期間</span>
+            <div role="group" aria-label="履歴の表示日数">
+              <button type="button" data-days="7">7日</button>
+              <button type="button" data-days="14">14日</button>
+              <button type="button" data-days="30" aria-pressed="true">30日</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="history-summary" aria-label="履歴概要">
+          <div><span>表示期間</span><strong id="rangeText">--</strong></div>
+          <div><span>監視サービス</span><strong id="serviceCount">--</strong></div>
+          <div><span>影響のあった日</span><strong id="impactDayCount">--</strong></div>
+          <div><span>最終集計</span><strong id="generatedAt">--</strong></div>
+        </section>
+
+        <section class="section-block history-section" aria-labelledby="serviceHistoryTitle">
+          <div class="section-heading">
+            <div><p class="section-label">UPTIME</p><h2 id="serviceHistoryTitle">サービス別履歴</h2></div>
+            <p>色付きのセルは、その日に観測された最も影響の大きい状態を示します。データがない日は「確認中」として表示します。</p>
+          </div>
+          <div class="history-legend" aria-label="ステータス凡例">
+            <span><i data-status="operational"></i>稼働中</span>
+            <span><i data-status="maintenance"></i>メンテナンス</span>
+            <span><i data-status="degraded"></i>一部影響</span>
+            <span><i data-status="outage"></i>停止</span>
+            <span><i data-status="unknown"></i>確認中</span>
+          </div>
+          <div class="history-service-list" id="historyServiceList" aria-live="polite">
+            <div class="history-loading" aria-hidden="true"><span></span><span></span></div>
+          </div>
+        </section>
+
+        <section class="section-block incidents-section" aria-labelledby="historyIncidentsTitle">
+          <div class="section-heading">
+            <div><p class="section-label">INCIDENTS</p><h2 id="historyIncidentsTitle">障害・メンテナンス記録</h2></div>
+            <p>公開されている障害やメンテナンス情報を、新しいものから表示します。</p>
+          </div>
+          <div class="incident-list" id="historyIncidentList" aria-live="polite">
+            <div class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><div><strong>履歴を取得しています</strong><p>公開情報を読み込んでいます。</p></div></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer"><div><strong>ivRooom Status</strong><span>公式サービスステータス</span></div><p id="footerTimestamp">Updated --</p></footer>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/assets/history.js"></script>
+  </body>
+</html>

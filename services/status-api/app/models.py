@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -94,4 +94,42 @@ class PublicStatusResponse(BaseModel):
     generated_at: datetime
     overall_status: PublicStatus
     services: list[PublicService]
+    incidents: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PublicHistoryDay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    status: PublicStatus
+    samples: int = Field(ge=0)
+    availability_percent: float | None = Field(default=None, ge=0, le=100)
+
+
+class PublicHistoryService(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    group: str
+    name: str
+    description: str
+    current_status: PublicStatus
+    availability_percent: float | None = Field(default=None, ge=0, le=100)
+    days: list[PublicHistoryDay]
+
+
+class PublicHistoryRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    days: int = Field(ge=1, le=30)
+    from_date: date
+    to_date: date
+
+
+class PublicHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generated_at: datetime
+    range: PublicHistoryRange
+    services: list[PublicHistoryService]
     incidents: list[dict[str, Any]] = Field(default_factory=list)

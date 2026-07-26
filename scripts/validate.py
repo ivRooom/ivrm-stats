@@ -6,10 +6,16 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED_FILES = [
+HTML_FILES = [
     ROOT / "index.html",
+    ROOT / "history" / "index.html",
+]
+REQUIRED_FILES = [
+    *HTML_FILES,
     ROOT / "assets" / "styles.css",
     ROOT / "assets" / "app.js",
+    ROOT / "assets" / "history.css",
+    ROOT / "assets" / "history.js",
 ]
 
 
@@ -48,21 +54,25 @@ for path in REQUIRED_FILES:
         errors.append(f"missing required file: {path.relative_to(ROOT)}")
 
 if not errors:
-    html = (ROOT / "index.html").read_text(encoding="utf-8")
-    inspector = DocumentInspector()
-    inspector.feed(html)
-    inspector.has_title = "<title>" in html and "</title>" in html
+    for path in HTML_FILES:
+        relative = path.relative_to(ROOT)
+        html = path.read_text(encoding="utf-8")
+        inspector = DocumentInspector()
+        inspector.feed(html)
+        inspector.has_title = "<title>" in html and "</title>" in html
 
-    if not inspector.has_lang:
-        errors.append("index.html must declare html[lang]")
-    if not inspector.has_title:
-        errors.append("index.html must include a title")
-    if not inspector.has_viewport:
-        errors.append("index.html must include a viewport meta tag")
-    if not inspector.has_main:
-        errors.append("index.html must include a main element")
-    if inspector.duplicate_ids:
-        errors.append(f"duplicate ids: {', '.join(sorted(inspector.duplicate_ids))}")
+        if not inspector.has_lang:
+            errors.append(f"{relative} must declare html[lang]")
+        if not inspector.has_title:
+            errors.append(f"{relative} must include a title")
+        if not inspector.has_viewport:
+            errors.append(f"{relative} must include a viewport meta tag")
+        if not inspector.has_main:
+            errors.append(f"{relative} must include a main element")
+        if inspector.duplicate_ids:
+            errors.append(
+                f"{relative} duplicate ids: {', '.join(sorted(inspector.duplicate_ids))}"
+            )
 
 if errors:
     print("Validation failed:")
@@ -70,4 +80,4 @@ if errors:
         print(f"- {error}")
     sys.exit(1)
 
-print("Public status page validation passed.")
+print("Public status pages validation passed.")

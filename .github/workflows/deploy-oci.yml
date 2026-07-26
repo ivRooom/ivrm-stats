@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "index.html"
+      - "history/**"
       - "assets/**"
       - "scripts/**"
       - ".github/workflows/deploy-oci.yml"
@@ -32,6 +33,7 @@ jobs:
         run: |
           python3 scripts/validate.py
           node --check assets/app.js
+          node --check assets/history.js
           bash -n scripts/deploy-oci.sh
           bash -n scripts/rollback-oci.sh
 
@@ -49,7 +51,7 @@ jobs:
       - name: Package release
         run: |
           tar -czf /tmp/ivrm-stats-release.tar.gz \
-            index.html assets scripts/validate.py scripts/deploy-oci.sh scripts/rollback-oci.sh
+            index.html history assets scripts/validate.py scripts/deploy-oci.sh scripts/rollback-oci.sh
 
       - name: Upload release files
         env:
@@ -78,6 +80,8 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if curl --fail --silent --show-error --max-time 15 \
               https://stats.ivrm.jp/ >/dev/null \
+              && curl --fail --silent --show-error --max-time 15 \
+              https://stats.ivrm.jp/history/ >/dev/null \
               && curl --fail --silent --show-error --max-time 15 \
               https://stats.ivrm.jp/api/current.json >/dev/null; then
               exit 0

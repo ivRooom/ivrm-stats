@@ -6,6 +6,9 @@ stats.ivrm.jp {
         @status_public path /api/status.json
         reverse_proxy @status_public status-api:8080
 
+        @status_history path /api/status-history.json
+        reverse_proxy @status_history status-api:8080
+
         header {
             X-Content-Type-Options nosniff
             Referrer-Policy no-referrer
