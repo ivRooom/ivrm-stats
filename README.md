@@ -2,42 +2,85 @@
 
 `stats.ivrm.jp` で公開する、ivRooom公式の利用者向けサービスステータスページです。
 
-Minecraftサーバー専用の運用画面ではなく、今後追加されるWeb、API、コミュニティ、ゲームなど複数サービスの稼働状況を同じ画面で公開できる構成にしています。
+Minecraftサーバー専用の運用画面ではなく、Web、API、Discord、ゲームなど複数サービスの稼働状況を同じ画面で公開できる構成です。
 
-## 目的
-
-- 利用者が「今使えるか」を最初の数秒で判断できる
-- 現在の障害、メンテナンス、復旧状況を公開できる
-- Minecraft以外のサービスを同じUIへ追加できる
-- OCI上の既存JSONを維持しながらGitHubでUIを管理する
-- `main`へのマージ後にGitHub ActionsからOCIへ安全にデプロイする
-
-## データソース
-
-将来の複数サービス対応では、次のAPIを優先して読み込みます。
+## 構成
 
 ```text
-/api/status.json
+Minecraft collector
+  -> current.json / history.json
+
+Herta status-agent（次フェーズ）
+  -> HTTPS POST + HMAC
+
+OCI Status API
+  -> SQLiteへHerta履歴を保存
+  -> Minecraft JSONと統合
+  -> GET /api/status.json
+
+Caddy
+  -> 静的UI
+  -> APIパスのみstatus-apiへreverse proxy
 ```
 
-スキーマは `docs/status-api-schema.md` を参照してください。
+## ディレクトリ
 
-`/api/status.json` が存在しない間は、現在のcollectorが生成する次のAPIを自動変換して表示します。
+```text
+index.html / assets/              公開ステータスUI
+services/status-api/              FastAPI + SQLiteバックエンド
+deploy/status-api/                OCI Docker Compose / Caddy設定
+scripts/deploy-oci.sh             静的UIデプロイ
+scripts/deploy-status-api-oci.sh  Status APIデプロイ
+scripts/send-test-status.py       HMACテスト送信
+docs/                             API・認証・OCI運用資料
+```
+
+## 公開API
+
+```text
+GET /api/status.json
+```
+
+MinecraftとHertaを統合し、各サービスの現在状態と24時間タイムラインを返します。Hertaから120秒以上データを受信できない場合は、最後の正常状態を維持せず`unknown`へ変更します。
+
+内部受信API：
+
+```text
+POST /api/internal/status-ingest
+```
+
+HMAC-SHA256、timestamp、request ID、本文hashで認証し、SQLiteでリプレイを検知します。詳細は次を参照してください。
+
+- `docs/status-api-schema.md`
+- `docs/status-ingest-auth.md`
+- `docs/oci-deployment.md`
+
+## UIのフォールバック
+
+`/api/status.json`がまだ存在しない場合、UIは既存collectorの次のJSONを読み込みます。
 
 ```text
 /api/current.json
 /api/history.json
 ```
 
-そのため、バックエンドを先に変更しなくても新しい利用者向けUIへ移行できます。
-
-## ローカル確認
+## ローカルUI確認
 
 ```bash
 python3 -m http.server 4173
 ```
 
-## 検証
+## Status APIテスト
+
+```bash
+cd services/status-api
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+## 静的UIの検証
 
 ```bash
 python3 scripts/validate.py
@@ -46,25 +89,33 @@ bash -n scripts/deploy-oci.sh
 bash -n scripts/rollback-oci.sh
 ```
 
-## GitHub ActionsからOCIへデプロイ
+## GitHub Actions
 
-`.github/workflows/deploy-oci.yml` は次の2経路に対応します。
+| Workflow | 役割 |
+|---|---|
+| `UI Quality Check` | HTML、JavaScript、UIデプロイスクリプト検証 |
+| `Deploy to OCI` | 静的UIをOCIへデプロイ |
+| `Status API Quality Check` | FastAPIテスト、linux/arm64 Docker build、スクリプト検証 |
+| `Deploy Status API to OCI` | GHCRへARM64イメージをpushし、OCIへ`--no-build`デプロイ |
 
-1. `main`へのpush（通常はPRマージ後）
-2. Actions画面からの手動実行
+Status APIの自動デプロイは、GitHub Repository Variable `STATUS_API_AUTO_DEPLOY=true` の場合だけ`main`へのpushで実行します。初回OCI設定が完了するまでは、Actions画面の手動実行を使用してください。
 
-GitHub Environment `production` と、次のSecretsを設定します。
+GitHub Environment `production` では次のSecretsを利用します。
 
 | Secret | 内容 |
 |---|---|
 | `OCI_HOST` | OCIインスタンスのホスト名またはIP |
-| `OCI_USER` | 通常は `opc` |
+| `OCI_USER` | 通常は`opc` |
 | `OCI_SSH_KEY` | デプロイ専用Ed25519秘密鍵 |
 | `OCI_KNOWN_HOSTS` | OCIホストのknown_hosts行 |
 
-本番デプロイはUIファイルだけを更新し、collectorが生成する `/opt/ivrm/www/stats/api/` を保持します。
+Herta受信用の共有鍵はGitHubへ保存せず、OCI上の次へ登録します。
 
-## OCIへ手動デプロイ
+```text
+/opt/ivrm/compose/ivrm-status-api/.env
+```
+
+## 静的UIをOCIへ手動デプロイ
 
 ```bash
 bash scripts/deploy-oci.sh

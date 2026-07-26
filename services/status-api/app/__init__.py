@@ -1,0 +1,1 @@
+"""ivRooom public status API."""

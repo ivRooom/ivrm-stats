@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+
+from fastapi.testclient import TestClient
+
+from app.config import Settings
+from app.db import StatusRepository
+from app.main import create_app
+from app.models import IngestPayload
+from app.service import StatusService
+from conftest import payload, signed_request
+
+
+def test_public_status_contains_minecraft_and_unknown_herta(client: TestClient) -> None:
+    response = client.get("/api/status.json")
+    assert response.status_code == 200
+    data = response.json()
+    service_ids = {service["id"] for service in data["services"]}
+    assert service_ids == {"minecraft-network", "herta-discord-bot"}
+    herta = next(service for service in data["services"] if service["id"] == "herta-discord-bot")
+    assert herta["status"] == "unknown"
+    assert "checks" not in herta
+
+
+def test_ingested_herta_is_exposed_without_internal_checks(client: TestClient) -> None:
+    body, headers = signed_request(payload())
+    assert client.post("/api/internal/status-ingest", content=body, headers=headers).status_code == 202
+    data = client.get("/api/status.json").json()
+    herta = next(service for service in data["services"] if service["id"] == "herta-discord-bot")
+    assert herta["status"] == "operational"
+    assert herta["meta"] == {"type": "discord_bot", "version": "0.1.0"}
+    serialized = json.dumps(data)
+    assert "database" not in serialized
+    assert "redis" not in serialized
+    assert "worker" not in serialized
+
+
+def test_herta_becomes_unknown_when_stale(settings: Settings) -> None:
+    repository = StatusRepository(settings.db_path)
+    repository.initialize(settings.herta_stale_after_seconds)
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=settings.herta_stale_after_seconds + 1)
+    repository.save_ingest(
+        IngestPayload.model_validate(payload(checked_at=old.isoformat())),
+        request_id="22222222-2222-4222-8222-222222222222",
+        received_at=old,
+        replay_ttl_seconds=settings.replay_ttl_seconds,
+        history_retention_days=settings.history_retention_days,
+    )
+    result = StatusService(settings, repository).public_status(now)
+    herta = next(service for service in result.services if service.id == "herta-discord-bot")
+    assert herta.status.value == "unknown"
+
+
+def test_corrupt_minecraft_does_not_break_herta(settings: Settings) -> None:
+    settings.minecraft_current_path.write_text("{broken", encoding="utf-8")
+    app = create_app(settings)
+    client = TestClient(app)
+    body, headers = signed_request(payload())
+    assert client.post("/api/internal/status-ingest", content=body, headers=headers).status_code == 202
+    response = client.get("/api/status.json")
+    assert response.status_code == 200
+    statuses = {service["id"]: service["status"] for service in response.json()["services"]}
+    assert statuses["minecraft-network"] == "unknown"
+    assert statuses["herta-discord-bot"] == "operational"
+
+
+def test_healthz_checks_sqlite(client: TestClient) -> None:
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
