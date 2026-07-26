@@ -9,6 +9,7 @@
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/assets/styles.css" />
     <link rel="stylesheet" href="/assets/history.css" />
+    <link rel="stylesheet" href="/assets/navigation.css" />
   </head>
   <body>
     <div class="page-glow page-glow-a" aria-hidden="true"></div>
@@ -23,10 +24,15 @@
           <a href="/">現在の状況</a>
           <a href="/history/" aria-current="page">稼働履歴</a>
         </nav>
-        <button class="refresh-button" id="refreshButton" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
-          <span>更新</span>
-        </button>
+        <div class="header-actions">
+          <a class="header-page-link" href="/" aria-label="現在の稼働状況を見る">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg><span>現在</span>
+          </a>
+          <button class="refresh-button" id="refreshButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+            <span>更新</span>
+          </button>
+        </div>
       </header>
 
       <main id="top">
@@ -45,6 +51,10 @@
             </div>
           </div>
         </section>
+
+        <nav class="history-back-route" aria-label="現在の稼働状況へ戻る">
+          <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg><span>現在の稼働状況へ戻る</span></a>
+        </nav>
 
         <section class="history-summary" aria-label="履歴概要">
           <div><span>表示期間</span><strong id="rangeText">--</strong></div>
