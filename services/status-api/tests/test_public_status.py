@@ -37,6 +37,39 @@ def test_ingested_herta_is_exposed_without_internal_checks(client: TestClient) -
     assert "worker" not in serialized
 
 
+def test_public_history_defaults_to_thirty_days(client: TestClient) -> None:
+    response = client.get("/api/status-history.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["range"]["days"] == 30
+    assert {service["id"] for service in data["services"]} == {
+        "minecraft-network",
+        "herta-discord-bot",
+    }
+    assert all(len(service["days"]) == 30 for service in data["services"])
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+
+
+def test_public_history_accepts_range_and_includes_ingest(client: TestClient) -> None:
+    body, headers = signed_request(payload())
+    assert client.post("/api/internal/status-ingest", content=body, headers=headers).status_code == 202
+
+    response = client.get("/api/status-history.json?days=7")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["range"]["days"] == 7
+    herta = next(service for service in data["services"] if service["id"] == "herta-discord-bot")
+    assert len(herta["days"]) == 7
+    assert herta["availability_percent"] == 100.0
+    assert herta["days"][-1]["status"] == "operational"
+    assert herta["days"][-1]["samples"] == 1
+
+
+def test_public_history_rejects_invalid_range(client: TestClient) -> None:
+    assert client.get("/api/status-history.json?days=0").status_code == 400
+    assert client.get("/api/status-history.json?days=31").status_code == 400
+
+
 def test_herta_becomes_unknown_when_stale(settings: Settings) -> None:
     repository = StatusRepository(settings.db_path)
     repository.initialize(settings.herta_stale_after_seconds)
