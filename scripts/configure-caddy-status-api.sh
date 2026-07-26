@@ -89,6 +89,54 @@ write_caddyfile_in_place() {
   sudo chmod 0644 "$target_file"
 }
 
+copy_active_caddyfile() {
+  : > "$ACTIVE_FILE"
+  docker cp "${CADDY_CONTAINER}:/etc/caddy/Caddyfile" "$ACTIVE_FILE"
+}
+
+print_caddy_mount_diagnostics() {
+  echo "Detected host Caddyfile: $CADDYFILE" >&2
+  echo "Host SHA-256: $(sha256sum "$CADDYFILE" | awk '{print $1}')" >&2
+  echo "Container SHA-256: $(sha256sum "$ACTIVE_FILE" | awk '{print $1}')" >&2
+  echo "Caddy mounts:" >&2
+  docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2
+}
+
+recreate_caddy_for_stale_bind_mount() {
+  local compose_workdir compose_service
+  compose_workdir="$(docker inspect "$CADDY_CONTAINER" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')"
+  compose_service="$(docker inspect "$CADDY_CONTAINER" --format '{{index .Config.Labels "com.docker.compose.service"}}')"
+
+  if [[ -z "$compose_workdir" || -z "$compose_service" ]]; then
+    echo "ERROR: CaddyのCompose作業ディレクトリまたはサービス名を検出できません。" >&2
+    return 1
+  fi
+  if [[ ! -d "$compose_workdir" ]]; then
+    echo "ERROR: CaddyのCompose作業ディレクトリが存在しません: $compose_workdir" >&2
+    return 1
+  fi
+
+  echo "WARNING: Caddyが置換前のCaddyfile inodeを参照しています。" >&2
+  echo "WARNING: bind mountを現在のホストファイルへ付け直すため、Caddyコンテナを一度だけ再作成します。" >&2
+  echo "Compose workdir: $compose_workdir" >&2
+  echo "Compose service: $compose_service" >&2
+
+  (
+    cd "$compose_workdir"
+    docker compose up -d --no-deps --force-recreate "$compose_service"
+  )
+
+  for _attempt in {1..20}; do
+    if [[ "$(docker inspect "$CADDY_CONTAINER" --format '{{.State.Running}}' 2>/dev/null || true)" == "true" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: 再作成後のCaddyコンテナが起動状態になりませんでした。" >&2
+  return 1
+}
+
 write_caddyfile_in_place "$TEMP_FILE" "$CADDYFILE"
 
 rollback() {
@@ -98,14 +146,16 @@ rollback() {
 }
 trap rollback ERR
 
-docker cp "${CADDY_CONTAINER}:/etc/caddy/Caddyfile" "$ACTIVE_FILE"
+copy_active_caddyfile
 if ! cmp -s "$CADDYFILE" "$ACTIVE_FILE"; then
-  echo "ERROR: ホストとコンテナのCaddyfile内容が一致しません。" >&2
-  echo "Detected host Caddyfile: $CADDYFILE" >&2
-  echo "Host SHA-256: $(sha256sum "$CADDYFILE" | awk '{print $1}')" >&2
-  echo "Container SHA-256: $(sha256sum "$ACTIVE_FILE" | awk '{print $1}')" >&2
-  echo "Caddy mounts:" >&2
-  docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2
+  print_caddy_mount_diagnostics
+  recreate_caddy_for_stale_bind_mount
+  copy_active_caddyfile
+fi
+
+if ! cmp -s "$CADDYFILE" "$ACTIVE_FILE"; then
+  echo "ERROR: Caddy再作成後もホストとコンテナのCaddyfile内容が一致しません。" >&2
+  print_caddy_mount_diagnostics
   false
 fi
 if ! grep -Fq 'reverse_proxy @status_public status-api:8080' "$ACTIVE_FILE"; then
