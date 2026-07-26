@@ -76,4 +76,28 @@ fi
 
 bash "${SOURCE_DIR}/scripts/configure-caddy-status-api.sh"
 
-echo "Status API deployed: ghcr.io/ivrooom/ivrm-stats-api:${IMAGE_TAG}"
+origin_status=""
+for attempt in 1 2 3 4 5; do
+  origin_status="$(curl --fail --silent --show-error --max-time 15 \
+    --resolve stats.ivrm.jp:443:127.0.0.1 \
+    "https://stats.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-${attempt}" || true)"
+  if [[ -n "$origin_status" ]] \
+    && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <<<"$origin_status"; then
+    echo "OCI origin status route verified"
+    echo "Status API deployed: ghcr.io/ivrooom/ivrm-stats-api:${IMAGE_TAG}"
+    exit 0
+  fi
+  sleep 3
+done
+
+echo "ERROR: OCI origin did not return the integrated status API" >&2
+echo "Container state:" >&2
+docker inspect ivrm-status-api --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' >&2 || true
+echo "Caddy mounts:" >&2
+docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2 || true
+echo "Local Caddy response headers:" >&2
+curl --silent --show-error --insecure --include --max-time 15 \
+  --resolve stats.ivrm.jp:443:127.0.0.1 \
+  "https://stats.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-diagnostic" \
+  -o /dev/null >&2 || true
+exit 1

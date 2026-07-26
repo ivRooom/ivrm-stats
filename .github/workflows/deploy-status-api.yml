@@ -120,13 +120,35 @@ jobs:
           REMOTE
 
       - name: Production smoke test
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
+          set -u
+          response_file="$(mktemp)"
+          headers_file="$(mktemp)"
+          trap 'rm -f "$response_file" "$headers_file"' EXIT
+
           for attempt in 1 2 3 4 5; do
-            status_json="$(curl --fail --silent --show-error --max-time 15 https://stats.ivrm.jp/api/status.json || true)"
-            if [[ -n "$status_json" ]] \
-              && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <<<"$status_json"; then
+            url="https://stats.ivrm.jp/api/status.json?deploy=${DEPLOY_SHA}-${attempt}"
+            http_code="$(curl --silent --show-error --max-time 15 \
+              --header 'Cache-Control: no-cache' \
+              --dump-header "$headers_file" \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              "$url" || true)"
+
+            echo "Public smoke test attempt ${attempt}: HTTP ${http_code:-curl-error}"
+            if [[ "$http_code" == "200" ]] \
+              && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <"$response_file"; then
               exit 0
             fi
             sleep 5
           done
+
+          echo "Public endpoint did not return the integrated Status API." >&2
+          echo "Final response headers:" >&2
+          sed -n '1,40p' "$headers_file" >&2 || true
+          echo "Final response body (first 500 bytes):" >&2
+          head -c 500 "$response_file" >&2 || true
+          echo >&2
           exit 1
