@@ -76,6 +76,25 @@ OCI上でローカルbuildは行いません。
 - Status APIのmatcherとupstreamがadapt後のJSONへ存在
 - `caddy validate`が成功
 
+過去のデプロイでCaddyfileのinodeがすでに置き換わっており、起動中コンテナが古いinodeを参照している場合は、同一inodeへの上書きだけでは復旧できません。
+
+その場合、スクリプトは次を行います。
+
+1. ホスト側とコンテナ側のSHA-256不一致を検出
+2. CaddyコンテナのCompose作業ディレクトリとサービス名をラベルから取得
+3. `docker compose up -d --no-deps --force-recreate`でCaddyだけを一度再作成
+4. bind mountが現在のホストCaddyfileへ付け直されたことを再検証
+5. validateとreloadを続行
+
+Caddyの再作成中は、数秒程度HTTPS接続が切れる可能性があります。この自動復旧は、ホスト側とコンテナ側の内容が一致しない場合だけ実行されます。
+
+手動確認：
+
+```bash
+sudo sha256sum /opt/ivrm/compose/caddy/Caddyfile
+docker exec caddy sha256sum /etc/caddy/Caddyfile
+```
+
 ## 確認
 
 ```bash
