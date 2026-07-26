@@ -59,6 +59,23 @@ GHCRのpush・一時pull認証には同一リポジトリの`GITHUB_TOKEN`を利
 
 OCI上でローカルbuildは行いません。
 
+## Caddyfileの更新方式
+
+本番Caddyfileはホストの単一ファイルを、コンテナの`/etc/caddy/Caddyfile`へbind mountしています。
+
+```text
+/opt/ivrm/compose/caddy/Caddyfile
+  -> /etc/caddy/Caddyfile
+```
+
+この構成では、`install`や一時ファイルの`rename`でホスト側Caddyfileのinodeを置き換えると、起動中コンテナが古いinodeを参照し続ける場合があります。
+
+デプロイスクリプトはCaddyfileを同じinodeへ上書きし、次を検証してからreloadします。
+
+- ホスト側とコンテナ側のCaddyfileが同一内容
+- Status APIのmatcherとupstreamがadapt後のJSONへ存在
+- `caddy validate`が成功
+
 ## 確認
 
 ```bash
@@ -75,10 +92,14 @@ curl -fsS https://stats.ivrm.jp/api/status.json | jq
 /opt/ivrm/compose/caddy/Caddyfile.status-api-backup-YYYYMMDD-HHMMSS
 ```
 
-戻す場合：
+戻す場合も、単一ファイルbind mountのinodeを維持するため、`cp`や`install`ではなく内容を上書きします。
 
 ```bash
-sudo cp -a <backup> /opt/ivrm/compose/caddy/Caddyfile
+BACKUP=<backup>
+CADDYFILE=/opt/ivrm/compose/caddy/Caddyfile
+sudo sh -c 'cat "$1" > "$2"' sh "$BACKUP" "$CADDYFILE"
+sudo chmod 0644 "$CADDYFILE"
+
 CADDY_CONTAINER=$(docker ps --format '{{.Names}} {{.Image}}' | awk '$2 ~ /^caddy(:|@)/ {print $1; exit}')
 docker exec "$CADDY_CONTAINER" caddy validate --config /etc/caddy/Caddyfile
 docker exec "$CADDY_CONTAINER" caddy reload --config /etc/caddy/Caddyfile
