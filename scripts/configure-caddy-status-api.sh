@@ -77,21 +77,40 @@ if end is None:
 updated = text[:start] + snippet + text[end:].lstrip("\n")
 temporary.write_text(updated, encoding="utf-8")
 PY
-sudo install -m 0644 "$TEMP_FILE" "$CADDYFILE"
+
+# Caddyfileは単一ファイルとしてbind mountされているため、installやrenameで
+# 宛先inodeを置き換えると、起動中コンテナが古いinodeを参照し続ける。
+# 内容を同じinodeへ上書きし、コンテナ側へ即時反映させる。
+write_caddyfile_in_place() {
+  local source_file="$1"
+  local target_file="$2"
+
+  sudo sh -c 'cat "$1" > "$2"' sh "$source_file" "$target_file"
+  sudo chmod 0644 "$target_file"
+}
+
+write_caddyfile_in_place "$TEMP_FILE" "$CADDYFILE"
 
 rollback() {
   echo "Caddy validation/reload failed; restoring $BACKUP" >&2
-  sudo cp -a "$BACKUP" "$CADDYFILE"
+  write_caddyfile_in_place "$BACKUP" "$CADDYFILE"
   docker exec "$CADDY_CONTAINER" caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
 }
 trap rollback ERR
 
 docker cp "${CADDY_CONTAINER}:/etc/caddy/Caddyfile" "$ACTIVE_FILE"
-if ! grep -Fq 'reverse_proxy @status_public status-api:8080' "$ACTIVE_FILE"; then
-  echo "ERROR: 更新したホストCaddyfileがコンテナ内の/etc/caddy/Caddyfileへ反映されていません。" >&2
+if ! cmp -s "$CADDYFILE" "$ACTIVE_FILE"; then
+  echo "ERROR: ホストとコンテナのCaddyfile内容が一致しません。" >&2
   echo "Detected host Caddyfile: $CADDYFILE" >&2
+  echo "Host SHA-256: $(sha256sum "$CADDYFILE" | awk '{print $1}')" >&2
+  echo "Container SHA-256: $(sha256sum "$ACTIVE_FILE" | awk '{print $1}')" >&2
   echo "Caddy mounts:" >&2
   docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2
+  false
+fi
+if ! grep -Fq 'reverse_proxy @status_public status-api:8080' "$ACTIVE_FILE"; then
+  echo "ERROR: 更新したCaddyfileにStatus APIルートがありません。" >&2
+  echo "Detected host Caddyfile: $CADDYFILE" >&2
   false
 fi
 
