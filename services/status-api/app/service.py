@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from .config import Settings
 from .db import Snapshot, StatusRepository
 from .minecraft import MinecraftSource
-from .models import PublicService, PublicStatus, PublicStatusResponse, worst_status
+from .models import (
+    PublicHistoryDay,
+    PublicHistoryRange,
+    PublicHistoryResponse,
+    PublicHistoryService,
+    PublicService,
+    PublicStatus,
+    PublicStatusResponse,
+    worst_status,
+)
 
 
 class StatusService:
@@ -28,6 +37,68 @@ class StatusService:
             generated_at=generated_at,
             overall_status=worst_status([service.status for service in services]),
             services=services,
+            incidents=[],
+        )
+
+    def public_history(
+        self,
+        days: int = 30,
+        now: datetime | None = None,
+    ) -> PublicHistoryResponse:
+        if not 1 <= days <= 30:
+            raise ValueError("days must be between 1 and 30")
+
+        generated_at = (now or datetime.now(UTC)).astimezone(UTC)
+        start_date = generated_at.date() - timedelta(days=days - 1)
+        start = datetime.combine(start_date, time.min, tzinfo=UTC)
+        current_services = {
+            service.id: service for service in self.public_status(generated_at).services
+        }
+
+        minecraft = current_services["minecraft-network"]
+        herta = current_services["herta-discord-bot"]
+        minecraft_days, minecraft_availability = self._daily_history(
+            self.minecraft.history_samples(start, generated_at),
+            start_date,
+            days,
+        )
+        herta_days, herta_availability = self._daily_history(
+            [
+                (snapshot.received_at.astimezone(UTC), snapshot.status)
+                for snapshot in self.repository.snapshots_since("herta-discord-bot", start)
+                if snapshot.received_at.astimezone(UTC) <= generated_at
+            ],
+            start_date,
+            days,
+        )
+
+        return PublicHistoryResponse(
+            generated_at=generated_at,
+            range=PublicHistoryRange(
+                days=days,
+                from_date=start_date,
+                to_date=generated_at.date(),
+            ),
+            services=[
+                PublicHistoryService(
+                    id=minecraft.id,
+                    group=minecraft.group,
+                    name=minecraft.name,
+                    description=minecraft.description,
+                    current_status=minecraft.status,
+                    availability_percent=minecraft_availability,
+                    days=minecraft_days,
+                ),
+                PublicHistoryService(
+                    id=herta.id,
+                    group=herta.group,
+                    name=herta.name,
+                    description=herta.description,
+                    current_status=herta.status,
+                    availability_percent=herta_availability,
+                    days=herta_days,
+                ),
+            ],
             incidents=[],
         )
 
@@ -87,3 +158,42 @@ class StatusService:
             index = min(23, int((received - start).total_seconds() // 3600))
             buckets[index].append(snapshot.status)
         return [worst_status(bucket) if bucket else PublicStatus.UNKNOWN for bucket in buckets]
+
+    @staticmethod
+    def _daily_history(
+        samples: list[tuple[datetime, PublicStatus]],
+        start_date: date,
+        days: int,
+    ) -> tuple[list[PublicHistoryDay], float | None]:
+        buckets: dict[date, list[PublicStatus]] = {
+            start_date + timedelta(days=index): [] for index in range(days)
+        }
+        for recorded_at, status in samples:
+            sample_date = recorded_at.astimezone(UTC).date()
+            if sample_date in buckets:
+                buckets[sample_date].append(status)
+
+        result: list[PublicHistoryDay] = []
+        operational_total = 0
+        known_total = 0
+        for day, values in buckets.items():
+            known = [status for status in values if status != PublicStatus.UNKNOWN]
+            operational = sum(status == PublicStatus.OPERATIONAL for status in known)
+            day_availability = round((operational / len(known)) * 100, 1) if known else None
+            result.append(
+                PublicHistoryDay(
+                    date=day,
+                    status=worst_status(known) if known else PublicStatus.UNKNOWN,
+                    samples=len(values),
+                    availability_percent=day_availability,
+                )
+            )
+            operational_total += operational
+            known_total += len(known)
+
+        availability = (
+            round((operational_total / known_total) * 100, 2)
+            if known_total
+            else None
+        )
+        return result, availability
