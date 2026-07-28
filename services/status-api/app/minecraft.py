@@ -185,13 +185,17 @@ class MinecraftSource:
         is_stale: bool,
         probe_result: MinecraftProbeResult | None,
     ) -> PublicStatus:
-        if raw_status in {PublicStatus.MAINTENANCE, PublicStatus.DEGRADED}:
-            return raw_status
+        if raw_status == PublicStatus.MAINTENANCE:
+            return PublicStatus.MAINTENANCE
         if probe_result is not None:
-            if probe_result.reachable is True:
-                return PublicStatus.OPERATIONAL
             if probe_result.reachable is False:
                 return PublicStatus.OUTAGE
+            if probe_result.reachable is True:
+                return (
+                    PublicStatus.DEGRADED
+                    if raw_status == PublicStatus.DEGRADED
+                    else PublicStatus.OPERATIONAL
+                )
         return PublicStatus.UNKNOWN if is_stale else raw_status
 
     @staticmethod
