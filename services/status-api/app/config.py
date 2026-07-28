@@ -15,6 +15,16 @@ def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
     return value
 
 
+def _env_float(name: str, default: float, *, minimum: float = 0.1) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = float(raw)
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return value
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -35,10 +45,19 @@ class Settings:
     minecraft_stale_after_seconds: int = 300
     minecraft_current_path: Path = Path("/data/minecraft/current.json")
     minecraft_history_path: Path = Path("/data/minecraft/history.json")
+    minecraft_probe_connect_host: str | None = None
+    minecraft_probe_server_address: str = "mc.ivrm.jp"
+    minecraft_probe_port: int = 25_565
+    minecraft_probe_timeout_seconds: float = 2.0
+    minecraft_probe_cache_seconds: int = 15
     enable_docs: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
+        probe_host = os.getenv(
+            "MINECRAFT_PROBE_CONNECT_HOST",
+            "host.docker.internal",
+        ).strip()
         return cls(
             db_path=Path(os.getenv("STATUS_DB_PATH", "/data/status.db")),
             herta_ingest_secret=os.getenv("HERTA_INGEST_SECRET", ""),
@@ -54,6 +73,21 @@ class Settings:
             ),
             minecraft_history_path=Path(
                 os.getenv("MINECRAFT_HISTORY_PATH", "/data/minecraft/history.json")
+            ),
+            minecraft_probe_connect_host=probe_host or None,
+            minecraft_probe_server_address=os.getenv(
+                "MINECRAFT_PROBE_SERVER_ADDRESS",
+                "mc.ivrm.jp",
+            ).strip()
+            or "mc.ivrm.jp",
+            minecraft_probe_port=_env_int("MINECRAFT_PROBE_PORT", 25_565),
+            minecraft_probe_timeout_seconds=_env_float(
+                "MINECRAFT_PROBE_TIMEOUT_SECONDS",
+                2.0,
+            ),
+            minecraft_probe_cache_seconds=_env_int(
+                "MINECRAFT_PROBE_CACHE_SECONDS",
+                15,
             ),
             enable_docs=_env_bool("STATUS_ENABLE_DOCS", False),
         )
