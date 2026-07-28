@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from .config import Settings
 from .db import Snapshot, StatusRepository
 from .minecraft import MinecraftSource
+from .minecraft_probe import MinecraftStatusProbe
 from .models import (
     PublicHistoryDay,
     PublicHistoryRange,
@@ -21,10 +22,22 @@ class StatusService:
     def __init__(self, settings: Settings, repository: StatusRepository) -> None:
         self.settings = settings
         self.repository = repository
+        minecraft_probe = (
+            MinecraftStatusProbe(
+                connect_host=settings.minecraft_probe_connect_host,
+                server_address=settings.minecraft_probe_server_address,
+                port=settings.minecraft_probe_port,
+                timeout_seconds=settings.minecraft_probe_timeout_seconds,
+                cache_seconds=settings.minecraft_probe_cache_seconds,
+            )
+            if settings.minecraft_probe_connect_host
+            else None
+        )
         self.minecraft = MinecraftSource(
             current_path=settings.minecraft_current_path,
             history_path=settings.minecraft_history_path,
             stale_after_seconds=settings.minecraft_stale_after_seconds,
+            probe=minecraft_probe,
         )
 
     def public_status(self, now: datetime | None = None) -> PublicStatusResponse:
