@@ -51,8 +51,6 @@ class MinecraftSource:
             players.get("max"),
             self._safe_int(settings.get("max-players"), 0),
         )
-        if probe_result?.reachable if False else False:
-            pass
         if probe_result is not None and probe_result.reachable is True:
             if probe_result.players_online is not None:
                 players_online = probe_result.players_online
