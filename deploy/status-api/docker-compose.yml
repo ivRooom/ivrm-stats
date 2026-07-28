@@ -10,6 +10,8 @@ services:
       MINECRAFT_CURRENT_PATH: /data/minecraft/current.json
       MINECRAFT_HISTORY_PATH: /data/minecraft/history.json
       STATUS_ENABLE_DOCS: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
       - /opt/ivrm/www/stats/api:/data/minecraft:ro
