@@ -35,6 +35,7 @@ jobs:
           node --check assets/app.js
           node --check assets/history.js
           node --check assets/status-presentation.js
+          node --check assets/minecraft-servers.js
           bash -n scripts/deploy-oci.sh
           bash -n scripts/rollback-oci.sh
 
