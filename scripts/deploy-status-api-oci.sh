@@ -5,16 +5,27 @@ IMAGE_TAG="${1:?usage: deploy-status-api-oci.sh <image-tag>}"
 TARGET_DIR="${STATUS_API_DIR:-/opt/ivrm/compose/ivrm-status-api}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_SOURCE="${SOURCE_DIR}/deploy/status-api/docker-compose.yml"
+COLLECTOR_SOURCE="${SOURCE_DIR}/deploy/status-api/collect-minecraft-runtime.py"
+COLLECTOR_SERVICE_SOURCE="${SOURCE_DIR}/deploy/status-api/ivrm-minecraft-runtime-collector.service"
+COLLECTOR_TIMER_SOURCE="${SOURCE_DIR}/deploy/status-api/ivrm-minecraft-runtime-collector.timer"
+COLLECTOR_INSTALL_DIR="/usr/local/libexec/ivrm"
+COLLECTOR_OUTPUT="/opt/ivrm/www/stats/api/minecraft-runtime.json"
 ENV_FILE="${TARGET_DIR}/.env"
 IMAGE_ENV_FILE="${TARGET_DIR}/.image.env"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 DEPLOY_UID="$(id -u)"
 DEPLOY_GID="$(id -g)"
 
-if [[ ! -f "$COMPOSE_SOURCE" ]]; then
-  echo "ERROR: compose file not found: $COMPOSE_SOURCE" >&2
-  exit 1
-fi
+for required_file in \
+  "$COMPOSE_SOURCE" \
+  "$COLLECTOR_SOURCE" \
+  "$COLLECTOR_SERVICE_SOURCE" \
+  "$COLLECTOR_TIMER_SOURCE"; do
+  if [[ ! -f "$required_file" ]]; then
+    echo "ERROR: deployment file not found: $required_file" >&2
+    exit 1
+  fi
+done
 
 # 初回設定時にroot所有で作成された場合でも、デプロイユーザーが
 # .envを参照し、docker composeを実行できるように親ディレクトリを整える。
@@ -40,6 +51,32 @@ if [[ -z "$CADDY_NETWORK_NAME" ]]; then
   echo "ERROR: Caddy network could not be detected" >&2
   exit 1
 fi
+
+# Dockerソケットを公開APIコンテナへ渡さず、ホスト側のoneshot collectorだけが
+# 必要最小限の公開情報をJSONへ書き出す。
+sudo install -d -m 0755 "$COLLECTOR_INSTALL_DIR"
+sudo install -d -m 0755 "$(dirname "$COLLECTOR_OUTPUT")"
+sudo install -m 0755 "$COLLECTOR_SOURCE" "${COLLECTOR_INSTALL_DIR}/collect-minecraft-runtime.py"
+sudo install -m 0644 "$COLLECTOR_SERVICE_SOURCE" /etc/systemd/system/ivrm-minecraft-runtime-collector.service
+sudo install -m 0644 "$COLLECTOR_TIMER_SOURCE" /etc/systemd/system/ivrm-minecraft-runtime-collector.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now ivrm-minecraft-runtime-collector.timer
+sudo systemctl start ivrm-minecraft-runtime-collector.service
+
+if ! sudo test -s "$COLLECTOR_OUTPUT"; then
+  echo "ERROR: Minecraft runtime collector did not create $COLLECTOR_OUTPUT" >&2
+  sudo systemctl status ivrm-minecraft-runtime-collector.service --no-pager >&2 || true
+  exit 1
+fi
+sudo python3 - "$COLLECTOR_OUTPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+ids = {server.get("id") for server in payload.get("servers", [])}
+assert {"mc-main", "mc-resource"} <= ids
+PY
 
 sudo install -d -m 0750 -o 10001 -g 10001 "${TARGET_DIR}/data"
 if [[ -f "${TARGET_DIR}/docker-compose.yml" ]]; then
@@ -84,6 +121,7 @@ for attempt in 1 2 3 4 5; do
   if [[ -n "$origin_status" ]] \
     && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <<<"$origin_status"; then
     echo "OCI origin status route verified"
+    echo "Minecraft runtime collector verified"
     echo "Status API deployed: ghcr.io/ivrooom/ivrm-stats-api:${IMAGE_TAG}"
     exit 0
   fi
