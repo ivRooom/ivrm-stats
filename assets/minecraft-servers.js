@@ -21,6 +21,9 @@ const STARTABILITY_COPY = {
   unknown: "確認中",
 };
 
+let latestMinecraftService = null;
+let latestServers = [];
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -183,8 +186,18 @@ async function loadMinecraftServers() {
     return;
   }
 
+  latestMinecraftService = minecraftService;
+  latestServers = servers;
   container.innerHTML = servers.map(renderCard).join("");
-  updateMinecraftCopy(minecraftService, servers);
+  updateMinecraftCopy(latestMinecraftService, latestServers);
+}
+
+const serviceGroups = document.querySelector("#serviceGroups");
+if (serviceGroups) {
+  const observer = new MutationObserver(() => {
+    if (latestServers.length) updateMinecraftCopy(latestMinecraftService, latestServers);
+  });
+  observer.observe(serviceGroups, { childList: true, subtree: true });
 }
 
 loadMinecraftServers();
