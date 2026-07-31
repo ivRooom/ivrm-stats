@@ -1,0 +1,18 @@
+[Unit]
+Description=Collect public Minecraft runtime state for ivRooom Status
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/ivrm/collect-minecraft-runtime.py --output /opt/ivrm/www/stats/api/minecraft-runtime.json
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ivrm/www/stats/api
+
+[Install]
+WantedBy=multi-user.target
