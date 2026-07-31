@@ -18,6 +18,11 @@ REQUIRED_FILES = [
     ROOT / "assets" / "history.js",
     ROOT / "assets" / "navigation.css",
     ROOT / "assets" / "status-presentation.js",
+    ROOT / "assets" / "minecraft-servers.css",
+    ROOT / "assets" / "minecraft-servers.js",
+    ROOT / "deploy" / "status-api" / "collect-minecraft-runtime.py",
+    ROOT / "deploy" / "status-api" / "ivrm-minecraft-runtime-collector.service",
+    ROOT / "deploy" / "status-api" / "ivrm-minecraft-runtime-collector.timer",
 ]
 
 
@@ -75,6 +80,11 @@ if not errors:
             errors.append(
                 f"{relative} duplicate ids: {', '.join(sorted(inspector.duplicate_ids))}"
             )
+
+    index_html = (ROOT / "index.html").read_text(encoding="utf-8")
+    for required_id in ("minecraftServerList", "minecraftFeature"):
+        if f'id="{required_id}"' not in index_html:
+            errors.append(f"index.html must include #{required_id}")
 
 if errors:
     print("Validation failed:")

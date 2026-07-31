@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh public Minecraft runtime state every 30 seconds
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=true
+Unit=ivrm-minecraft-runtime-collector.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,161 @@
+.minecraft-server-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.minecraft-server-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(12, 15, 22, .72);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.minecraft-server-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, .018);
+}
+
+.minecraft-server-card header > div { min-width: 0; }
+.minecraft-server-card header > div > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--brand);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+.minecraft-server-card header strong {
+  display: inline;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+}
+.minecraft-server-card header small {
+  margin-left: 8px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.minecraft-runtime-pill,
+.minecraft-startability {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.minecraft-runtime-pill::before,
+.minecraft-startability::before {
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+.minecraft-runtime-pill.operational,
+.minecraft-startability.operational {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.minecraft-runtime-pill.standby,
+.minecraft-startability.startable {
+  background: rgba(97, 218, 251, .11);
+  color: var(--cyan);
+}
+.minecraft-runtime-pill.maintenance,
+.minecraft-startability.maintenance {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.minecraft-runtime-pill.outage,
+.minecraft-startability.outage {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.minecraft-runtime-pill.unknown,
+.minecraft-startability.unknown {
+  background: rgba(135, 146, 165, .12);
+  color: var(--unknown);
+}
+
+.minecraft-server-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+.minecraft-server-card dl > div {
+  min-width: 0;
+  padding: 16px 20px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.minecraft-server-card dl > div:nth-child(even) { border-right: 0; }
+.minecraft-server-card dt {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.minecraft-server-card dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.minecraft-server-card dd code {
+  color: var(--text-soft);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+.minecraft-server-card > p {
+  min-height: 52px;
+  margin: 0;
+  padding: 15px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.minecraft-runtime-empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(12, 15, 22, .72);
+}
+.minecraft-runtime-empty strong { display: block; margin-bottom: 7px; font-size: 14px; }
+.minecraft-runtime-empty p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+@media (max-width: 760px) {
+  .minecraft-server-list { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 460px) {
+  .minecraft-server-card > header { padding: 18px; }
+  .minecraft-server-card dl { grid-template-columns: 1fr; }
+  .minecraft-server-card dl > div,
+  .minecraft-server-card dl > div:nth-child(even) { border-right: 0; }
+  .minecraft-server-card > p { padding: 14px 18px; }
+}
