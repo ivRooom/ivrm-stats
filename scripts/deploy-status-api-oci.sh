@@ -60,12 +60,24 @@ sudo install -m 0755 "$COLLECTOR_SOURCE" "${COLLECTOR_INSTALL_DIR}/collect-minec
 sudo install -m 0644 "$COLLECTOR_SERVICE_SOURCE" /etc/systemd/system/ivrm-minecraft-runtime-collector.service
 sudo install -m 0644 "$COLLECTOR_TIMER_SOURCE" /etc/systemd/system/ivrm-minecraft-runtime-collector.timer
 sudo systemctl daemon-reload
-sudo systemctl enable --now ivrm-minecraft-runtime-collector.timer
-sudo systemctl start ivrm-minecraft-runtime-collector.service
+sudo systemctl enable ivrm-minecraft-runtime-collector.timer
+
+if ! sudo systemctl start ivrm-minecraft-runtime-collector.service; then
+  echo "ERROR: Minecraft runtime collector service failed" >&2
+  echo "Host Python:" >&2
+  sudo /usr/bin/python3 --version >&2 || true
+  echo "Service status:" >&2
+  sudo systemctl status ivrm-minecraft-runtime-collector.service --no-pager --full >&2 || true
+  echo "Recent service journal:" >&2
+  sudo journalctl -u ivrm-minecraft-runtime-collector.service -n 80 --no-pager >&2 || true
+  exit 1
+fi
+sudo systemctl start ivrm-minecraft-runtime-collector.timer
 
 if ! sudo test -s "$COLLECTOR_OUTPUT"; then
   echo "ERROR: Minecraft runtime collector did not create $COLLECTOR_OUTPUT" >&2
-  sudo systemctl status ivrm-minecraft-runtime-collector.service --no-pager >&2 || true
+  sudo systemctl status ivrm-minecraft-runtime-collector.service --no-pager --full >&2 || true
+  sudo journalctl -u ivrm-minecraft-runtime-collector.service -n 80 --no-pager >&2 || true
   exit 1
 fi
 sudo python3 - "$COLLECTOR_OUTPUT" <<'PY'
