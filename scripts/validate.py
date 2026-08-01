@@ -14,6 +14,7 @@ REQUIRED_FILES = [
     *HTML_FILES,
     ROOT / "assets" / "styles.css",
     ROOT / "assets" / "api-fetch-guard.js",
+    ROOT / "assets" / "page-load-guard.js",
     ROOT / "assets" / "app.js",
     ROOT / "assets" / "history.css",
     ROOT / "assets" / "history.js",
@@ -92,6 +93,17 @@ if not errors:
         html = path.read_text(encoding="utf-8")
         if '/assets/api-fetch-guard.js' not in html:
             errors.append(f"{relative} must load /assets/api-fetch-guard.js")
+
+    if '/assets/page-load-guard.js' not in index_html:
+        errors.append("index.html must load /assets/page-load-guard.js")
+
+    for asset in (
+        "/assets/app.js?v=",
+        "/assets/minecraft-servers.js?v=",
+        "/assets/status-presentation.js?v=",
+    ):
+        if asset not in index_html:
+            errors.append(f"index.html must version {asset.split('?')[0]}")
 
 if errors:
     print("Validation failed:")
