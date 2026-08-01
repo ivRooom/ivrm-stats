@@ -163,6 +163,10 @@ function updateMinecraftCopy(minecraftService, servers) {
   }
 }
 
+function renderRuntimeUnavailable(container) {
+  container.innerHTML = '<div class="minecraft-runtime-empty"><strong>サーバー起動可否を取得できません</strong><p>APIの応答を確認できませんでした。30秒後に自動で再取得します。</p></div>';
+}
+
 async function loadMinecraftServers() {
   const container = document.querySelector("#minecraftServerList");
   if (!container) return;
@@ -182,7 +186,7 @@ async function loadMinecraftServers() {
   servers = mergeMainProbe(servers, minecraftService);
 
   if (!servers.length) {
-    container.innerHTML = '<div class="minecraft-runtime-empty"><strong>サーバー起動可否を確認しています</strong><p>OCIホストから最新のコンテナ状態を取得しています。</p></div>';
+    renderRuntimeUnavailable(container);
     return;
   }
 

@@ -13,6 +13,7 @@ HTML_FILES = [
 REQUIRED_FILES = [
     *HTML_FILES,
     ROOT / "assets" / "styles.css",
+    ROOT / "assets" / "api-fetch-guard.js",
     ROOT / "assets" / "app.js",
     ROOT / "assets" / "history.css",
     ROOT / "assets" / "history.js",
@@ -85,6 +86,12 @@ if not errors:
     for required_id in ("minecraftServerList", "minecraftFeature"):
         if f'id="{required_id}"' not in index_html:
             errors.append(f"index.html must include #{required_id}")
+
+    for path in HTML_FILES:
+        relative = path.relative_to(ROOT)
+        html = path.read_text(encoding="utf-8")
+        if '/assets/api-fetch-guard.js' not in html:
+            errors.append(f"{relative} must load /assets/api-fetch-guard.js")
 
 if errors:
     print("Validation failed:")
