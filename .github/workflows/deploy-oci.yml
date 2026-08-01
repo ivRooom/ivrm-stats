@@ -32,6 +32,7 @@ jobs:
       - name: Validate
         run: |
           python3 scripts/validate.py
+          node --check assets/page-load-guard.js
           node --check assets/api-fetch-guard.js
           node scripts/test-api-fetch-guard.mjs
           node --check assets/app.js
@@ -69,6 +70,7 @@ jobs:
           tar -xzf /tmp/ivrm-stats-release.tar.gz -C "$RELEASE_CHECK_DIR"
           cd "$RELEASE_CHECK_DIR"
           python3 scripts/validate.py
+          node --check assets/page-load-guard.js
           node --check assets/api-fetch-guard.js
           node scripts/test-api-fetch-guard.mjs
           node --check assets/app.js
@@ -103,12 +105,18 @@ jobs:
       - name: Production smoke test
         run: |
           for attempt in 1 2 3 4 5; do
-            if curl --fail --silent --show-error --max-time 15 \
-              https://status.ivrm.jp/ >/dev/null \
+            PAGE="$(curl --fail --silent --show-error --max-time 15 \
+              "https://status.ivrm.jp/?deploy=${GITHUB_SHA}")" || true
+            if printf '%s' "$PAGE" | grep -q '/assets/page-load-guard.js?v=' \
+              && printf '%s' "$PAGE" | grep -q '/assets/app.js?v=' \
               && curl --fail --silent --show-error --max-time 15 \
-              https://status.ivrm.jp/history/ >/dev/null \
+                "https://status.ivrm.jp/assets/page-load-guard.js?deploy=${GITHUB_SHA}" >/dev/null \
               && curl --fail --silent --show-error --max-time 15 \
-              https://status.ivrm.jp/api/current.json >/dev/null; then
+                "https://status.ivrm.jp/assets/app.js?deploy=${GITHUB_SHA}" >/dev/null \
+              && curl --fail --silent --show-error --max-time 15 \
+                "https://status.ivrm.jp/history/?deploy=${GITHUB_SHA}" >/dev/null \
+              && curl --fail --silent --show-error --max-time 15 \
+                "https://status.ivrm.jp/api/status.json?deploy=${GITHUB_SHA}" >/dev/null; then
               exit 0
             fi
             sleep 5
