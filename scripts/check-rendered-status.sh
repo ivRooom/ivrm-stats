@@ -38,7 +38,8 @@ USER_DATA_DIR="$(mktemp -d)"
 trap 'rm -rf "$USER_DATA_DIR"' EXIT
 
 set +e
-"$BROWSER" \
+timeout --signal=TERM --kill-after=5s 45s \
+  "$BROWSER" \
   --headless=new \
   --no-sandbox \
   --disable-gpu \
@@ -51,7 +52,7 @@ set +e
   --user-data-dir="$USER_DATA_DIR" \
   --window-size=390,844 \
   --virtual-time-budget=15000 \
-  --screenshot="$OUTPUT_DIR/mobile.png" \
+  --timeout=20000 \
   --enable-logging=stderr \
   --log-level=0 \
   --dump-dom \
@@ -61,8 +62,26 @@ set +e
 BROWSER_EXIT=$?
 set -e
 
+# スクリーンショット取得はDOM dumpと分離し、どちらかの処理が互いを待ち続けないようにする。
+set +e
+timeout --signal=TERM --kill-after=5s 30s \
+  "$BROWSER" \
+  --headless=new \
+  --no-sandbox \
+  --disable-gpu \
+  --disable-dev-shm-usage \
+  --user-data-dir="$(mktemp -d)" \
+  --window-size=390,844 \
+  --virtual-time-budget=12000 \
+  --screenshot="$OUTPUT_DIR/mobile.png" \
+  "${URL}?screenshot_check=$(date +%s)" \
+  >>"$OUTPUT_DIR/browser.log" 2>&1
+SCREENSHOT_EXIT=$?
+set -e
+printf 'DOM browser exit: %s\nScreenshot browser exit: %s\n' "$BROWSER_EXIT" "$SCREENSHOT_EXIT"
+
 if [[ $BROWSER_EXIT -ne 0 ]]; then
-  echo "ERROR: headless browser failed with exit code $BROWSER_EXIT" >&2
+  echo "ERROR: headless browser failed or timed out with exit code $BROWSER_EXIT" >&2
   cat "$OUTPUT_DIR/browser.log" >&2
   exit 1
 fi
@@ -75,13 +94,13 @@ import sys
 class Inspector(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.target = None
+        self.stack = []
         self.values = {}
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
         element_id = values.get("id")
-        if element_id in {
+        self.stack.append(element_id if element_id in {
             "overallTitle",
             "overallEyebrow",
             "overallMessage",
@@ -89,15 +108,16 @@ class Inspector(HTMLParser):
             "operationalCount",
             "activeIncidentCount",
             "freshnessText",
-        }:
-            self.target = element_id
+        } else None)
 
     def handle_endtag(self, _tag):
-        self.target = None
+        if self.stack:
+            self.stack.pop()
 
     def handle_data(self, data):
-        if self.target:
-            self.values[self.target] = self.values.get(self.target, "") + data
+        target = next((value for value in reversed(self.stack) if value), None)
+        if target:
+            self.values[target] = self.values.get(target, "") + data
 
 html = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
 inspector = Inspector()
