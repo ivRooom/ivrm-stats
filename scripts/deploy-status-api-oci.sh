@@ -128,8 +128,8 @@ bash "${SOURCE_DIR}/scripts/configure-caddy-status-api.sh"
 origin_status=""
 for attempt in 1 2 3 4 5; do
   origin_status="$(curl --fail --silent --show-error --max-time 15 \
-    --resolve stats.ivrm.jp:443:127.0.0.1 \
-    "https://stats.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-${attempt}" || true)"
+    --resolve status.ivrm.jp:443:127.0.0.1 \
+    "https://status.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-${attempt}" || true)"
   if [[ -n "$origin_status" ]] \
     && python3 -c 'import json,sys; data=json.load(sys.stdin); ids={s["id"] for s in data["services"]}; assert "minecraft-network" in ids and "herta-discord-bot" in ids' <<<"$origin_status"; then
     echo "OCI origin status route verified"
@@ -147,7 +147,7 @@ echo "Caddy mounts:" >&2
 docker inspect "$CADDY_CONTAINER" --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}' >&2 || true
 echo "Local Caddy response headers:" >&2
 curl --silent --show-error --insecure --include --max-time 15 \
-  --resolve stats.ivrm.jp:443:127.0.0.1 \
-  "https://stats.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-diagnostic" \
+  --resolve status.ivrm.jp:443:127.0.0.1 \
+  "https://status.ivrm.jp/api/status.json?origin_check=${IMAGE_TAG}-diagnostic" \
   -o /dev/null >&2 || true
 exit 1
