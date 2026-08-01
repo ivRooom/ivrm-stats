@@ -3,17 +3,40 @@ name: Rendered UI Diagnostics
 on:
   pull_request:
     paths:
-      - "index.html"
-      - "assets/**"
+      - "assets/minecraft-servers.js"
+      - "scripts/test-minecraft-observer.mjs"
       - "scripts/check-rendered-status.mjs"
       - ".github/workflows/rendered-ui-diagnostics.yml"
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy to OCI
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
+  observer-regression:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check assets/minecraft-servers.js
+          node --check scripts/test-minecraft-observer.mjs
+
+      - name: Test Minecraft observer
+        run: node scripts/test-minecraft-observer.mjs
+
   rendered-ui:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
