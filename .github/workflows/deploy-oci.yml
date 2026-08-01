@@ -43,6 +43,32 @@ jobs:
           bash -n scripts/deploy-oci.sh
           bash -n scripts/rollback-oci.sh
 
+      - name: Stamp release asset versions
+        env:
+          RELEASE_VERSION: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+          for relative in ("index.html", "history/index.html"):
+              path = Path(relative)
+              source = path.read_text(encoding="utf-8")
+              updated, count = re.subn(
+                  r'(/assets/[^?"]+\?v=)[^"]+',
+                  lambda match: f"{match.group(1)}{version}",
+                  source,
+              )
+              if count == 0:
+                  raise SystemExit(f"No versioned assets found in {relative}")
+              path.write_text(updated, encoding="utf-8")
+              print(f"Stamped {count} assets in {relative} with {version}")
+          PY
+          grep -F "/assets/minecraft-servers.js?v=${RELEASE_VERSION}" index.html
+          grep -F "/assets/app.js?v=${RELEASE_VERSION}" index.html
+
       - name: Configure SSH
         env:
           OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
@@ -110,12 +136,17 @@ jobs:
           for attempt in 1 2 3 4 5; do
             PAGE="$(curl --fail --silent --show-error --max-time 15 \
               "https://status.ivrm.jp/?deploy=${GITHUB_SHA}")" || true
-            if printf '%s' "$PAGE" | grep -q '/assets/page-load-guard.js?v=' \
-              && printf '%s' "$PAGE" | grep -q '/assets/app.js?v=' \
+            MINECRAFT_SCRIPT="$(curl --fail --silent --show-error --max-time 15 \
+              "https://status.ivrm.jp/assets/minecraft-servers.js?v=${GITHUB_SHA}")" || true
+            if printf '%s' "$PAGE" | grep -Fq "/assets/page-load-guard.js?v=${GITHUB_SHA}" \
+              && printf '%s' "$PAGE" | grep -Fq "/assets/app.js?v=${GITHUB_SHA}" \
+              && printf '%s' "$PAGE" | grep -Fq "/assets/minecraft-servers.js?v=${GITHUB_SHA}" \
+              && printf '%s' "$MINECRAFT_SCRIPT" | grep -q 'function mutationAddsServiceRow' \
+              && printf '%s' "$MINECRAFT_SCRIPT" | grep -q 'setTextIfChanged' \
               && curl --fail --silent --show-error --max-time 15 \
-                "https://status.ivrm.jp/assets/page-load-guard.js?deploy=${GITHUB_SHA}" >/dev/null \
+                "https://status.ivrm.jp/assets/page-load-guard.js?v=${GITHUB_SHA}" >/dev/null \
               && curl --fail --silent --show-error --max-time 15 \
-                "https://status.ivrm.jp/assets/app.js?deploy=${GITHUB_SHA}" >/dev/null \
+                "https://status.ivrm.jp/assets/app.js?v=${GITHUB_SHA}" >/dev/null \
               && curl --fail --silent --show-error --max-time 15 \
                 "https://status.ivrm.jp/history/?deploy=${GITHUB_SHA}" >/dev/null \
               && curl --fail --silent --show-error --max-time 15 \
