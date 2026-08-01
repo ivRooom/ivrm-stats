@@ -7,11 +7,12 @@
     <meta name="description" content="ivRooomが提供するサービスの稼働状況と障害情報を確認できる公式ステータスページです。" />
     <title>ivRooom Status</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20260801-3" />
-    <link rel="stylesheet" href="/assets/navigation.css?v=20260801-3" />
-    <link rel="stylesheet" href="/assets/minecraft-servers.css?v=20260801-3" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20260801-4" />
+    <link rel="stylesheet" href="/assets/navigation.css?v=20260801-4" />
+    <link rel="stylesheet" href="/assets/minecraft-servers.css?v=20260801-4" />
   </head>
   <body>
+    <noscript><div style="margin:16px;padding:16px;border:1px solid #64748b;border-radius:12px;background:#111827;color:#f8fafc">JavaScriptが無効なため、ステータスを表示できません。Safariの設定でJavaScriptを有効にしてください。</div></noscript>
     <div class="page-glow page-glow-a" aria-hidden="true"></div>
     <div class="page-glow page-glow-b" aria-hidden="true"></div>
     <div class="site-shell">
@@ -76,10 +77,129 @@
       <footer class="site-footer"><div><strong>ivRooom Status</strong><span>公式サービスステータス</span></div><p id="footerTimestamp">Updated --</p></footer>
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/assets/page-load-guard.js?v=20260801-3"></script>
-    <script src="/assets/api-fetch-guard.js?v=20260801-3"></script>
-    <script type="module" src="/assets/app.js?v=20260801-3"></script>
-    <script type="module" src="/assets/minecraft-servers.js?v=20260801-3"></script>
-    <script type="module" src="/assets/status-presentation.js?v=20260801-3"></script>
+    <script data-inline-status-fallback>
+      (function () {
+        function byId(id) { return document.getElementById(id); }
+        function setText(id, value) { var node = byId(id); if (node) node.textContent = value; }
+        function escapeHtml(value) {
+          return String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        }
+        function statusCopy(status) {
+          var copy = { operational: "正常稼働", maintenance: "メンテナンス中", degraded: "一部影響あり", outage: "障害発生中", unknown: "確認中" };
+          return copy[status] || copy.unknown;
+        }
+        function heroCopy(status) {
+          var copy = {
+            operational: ["ALL SYSTEMS OPERATIONAL", "すべてのシステムは正常です", "現在、利用者影響のある障害は確認されていません。"],
+            maintenance: ["SCHEDULED MAINTENANCE", "メンテナンスを実施しています", "一部サービスで予定されたメンテナンスを実施しています。"],
+            degraded: ["PARTIAL SERVICE IMPACT", "一部サービスに影響があります", "一部機能で遅延や不安定な状態を確認しています。"],
+            outage: ["SERVICE DISRUPTION", "サービス障害が発生しています", "現在、利用者影響のある障害を確認しています。"],
+            unknown: ["STATUS UNAVAILABLE", "最新の状態を確認できません", "一部サービスの状態を確認できません。"]
+          };
+          return copy[status] || copy.unknown;
+        }
+        function renderInline(data) {
+          var countNode = byId("serviceCount");
+          if (!countNode || countNode.textContent.trim() !== "--") return;
+          var services = data && data.services instanceof Array ? data.services : [];
+          var overall = data && data.overall_status ? String(data.overall_status) : "unknown";
+          var hero = heroCopy(overall);
+          document.body.setAttribute("data-overall-status", overall);
+          setText("overallEyebrow", hero[0]);
+          setText("overallTitle", hero[1]);
+          setText("overallMessage", hero[2]);
+          setText("serviceCount", String(services.length));
+          var operational = 0;
+          for (var i = 0; i < services.length; i += 1) {
+            if (services[i] && services[i].status === "operational") operational += 1;
+          }
+          setText("operationalCount", operational + " / " + services.length);
+          setText("activeIncidentCount", String(data && data.incidents instanceof Array ? data.incidents.length : 0));
+          setText("freshnessText", "最新データ");
+          var generated = data && data.generated_at ? new Date(data.generated_at) : new Date();
+          if (!isNaN(generated.getTime())) {
+            var time = ("0" + generated.getHours()).slice(-2) + ":" + ("0" + generated.getMinutes()).slice(-2);
+            setText("lastUpdated", time);
+            setText("footerTimestamp", "Updated " + generated.toLocaleString("ja-JP"));
+          }
+          setText("nextRefresh", "60秒後");
+          var groups = byId("serviceGroups");
+          if (groups) {
+            if (!services.length) {
+              groups.innerHTML = '<div class="empty-state"><div><strong>サービス情報を取得できません</strong><p>時間をおいて再度ご確認ください。</p></div></div>';
+            } else {
+              var html = "";
+              for (var j = 0; j < services.length; j += 1) {
+                var service = services[j] || {};
+                var status = service.status || "unknown";
+                html += '<article class="service-group"><header class="service-group-header"><h3>' + escapeHtml(service.group || "サービス") + '</h3><span>1 service</span></header>';
+                html += '<div class="service-row"><div class="service-identity"><div><strong>' + escapeHtml(service.name || "名称未設定") + '</strong><p>' + escapeHtml(service.description || "") + '</p></div></div>';
+                html += '<span class="service-state ' + escapeHtml(status) + '">' + escapeHtml(statusCopy(status)) + '</span></div></article>';
+              }
+              groups.innerHTML = html;
+            }
+          }
+          var minecraft = null;
+          for (var k = 0; k < services.length; k += 1) {
+            if (services[k] && services[k].meta && services[k].meta.type === "minecraft") { minecraft = services[k]; break; }
+          }
+          if (minecraft) {
+            var feature = byId("minecraftFeature");
+            if (feature) feature.hidden = false;
+            setText("minecraftMode", minecraft.meta.mode || minecraft.description || "Minecraft Server");
+            setText("playersOnline", String(minecraft.meta.playersOnline || 0));
+            setText("playersMax", String(minecraft.meta.playersMax || "--"));
+            setText("serverAddress", minecraft.meta.connection || "mc.ivrm.jp");
+          }
+          var refreshButton = byId("refreshButton");
+          if (refreshButton) { refreshButton.classList.remove("loading"); refreshButton.disabled = false; }
+          window.__ivrmInlineStatusRendered = true;
+        }
+        function renderFailure(code) {
+          if (window.__ivrmInlineStatusRendered) return;
+          setText("overallEyebrow", "STATUS DISPLAY ERROR");
+          setText("overallTitle", "ステータスを表示できません");
+          setText("overallMessage", "画面の表示処理に失敗しました。診断コード: " + code);
+          setText("freshnessText", "表示エラー");
+          setText("nextRefresh", "再読込待ち");
+          var groups = byId("serviceGroups");
+          if (groups) groups.innerHTML = '<div class="empty-state"><div><strong>ステータスを表示できません</strong><p>診断コード: ' + escapeHtml(code) + '</p></div></div>';
+        }
+        window.setTimeout(function () {
+          var countNode = byId("serviceCount");
+          if (!countNode || countNode.textContent.trim() !== "--") return;
+          try {
+            var request = new XMLHttpRequest();
+            request.open("GET", "/api/status.json?inline=" + Date.now(), true);
+            request.timeout = 8000;
+            request.setRequestHeader("Accept", "application/json");
+            request.onreadystatechange = function () {
+              if (request.readyState !== 4) return;
+              if (request.status >= 200 && request.status < 300) {
+                try { renderInline(JSON.parse(request.responseText)); }
+                catch (error) { renderFailure("inline_json_error"); }
+              } else {
+                renderFailure("inline_http_" + request.status);
+              }
+            };
+            request.onerror = function () { renderFailure("inline_network_error"); };
+            request.ontimeout = function () { renderFailure("inline_timeout"); };
+            request.send();
+          } catch (error) {
+            renderFailure("inline_javascript_error");
+          }
+        }, 1500);
+      })();
+    </script>
+    <script src="/assets/page-load-guard.js?v=20260801-4"></script>
+    <script src="/assets/api-fetch-guard.js?v=20260801-4"></script>
+    <script type="module" src="/assets/app.js?v=20260801-4"></script>
+    <script type="module" src="/assets/minecraft-servers.js?v=20260801-4"></script>
+    <script type="module" src="/assets/status-presentation.js?v=20260801-4"></script>
   </body>
 </html>
