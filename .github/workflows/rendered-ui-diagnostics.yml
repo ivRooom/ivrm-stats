@@ -50,6 +50,41 @@ jobs:
       - name: Verify diagnostic syntax
         run: node --check scripts/check-rendered-status.mjs
 
+      - name: Create local Status API fixture
+        run: |
+          mkdir -p api
+          cat > api/status.json <<'JSON'
+          {
+            "generatedAt": "2026-08-01T00:00:00Z",
+            "overallStatus": "operational",
+            "services": [
+              {
+                "id": "minecraft-network",
+                "group": "ゲームサービス",
+                "name": "Minecraft Network",
+                "description": "生活鯖（mc-main）",
+                "status": "operational",
+                "timeline": ["operational"],
+                "meta": {
+                  "type": "minecraft",
+                  "connection": "mc.ivrm.jp",
+                  "playersOnline": 0,
+                  "playersMax": 10,
+                  "serverVersion": "26.1.2"
+                }
+              },
+              {
+                "id": "status-data",
+                "group": "プラットフォーム",
+                "name": "Status Data",
+                "description": "サービス状態を公開するデータフィード",
+                "status": "operational",
+                "timeline": ["operational"]
+              }
+            ]
+          }
+          JSON
+
       - name: Start local status site
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/ivrm-status-http.log 2>&1 &
