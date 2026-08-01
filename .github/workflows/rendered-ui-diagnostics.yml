@@ -1,0 +1,37 @@
+name: Rendered UI Diagnostics
+
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "assets/**"
+      - "scripts/check-rendered-status.sh"
+      - ".github/workflows/rendered-ui-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rendered-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify script syntax
+        run: bash -n scripts/check-rendered-status.sh
+
+      - name: Check rendered production UI
+        run: bash scripts/check-rendered-status.sh https://status.ivrm.jp/
+
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-ui-diagnostics
+          path: /tmp/ivrm-status-browser
+          if-no-files-found: warn
+          retention-days: 7
