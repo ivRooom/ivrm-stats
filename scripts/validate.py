@@ -97,6 +97,13 @@ if not errors:
     if '/assets/page-load-guard.js' not in index_html:
         errors.append("index.html must load /assets/page-load-guard.js")
 
+    if 'data-inline-status-fallback' not in index_html:
+        errors.append("index.html must include the inline status fallback")
+    if 'new XMLHttpRequest()' not in index_html:
+        errors.append("index.html inline fallback must use XMLHttpRequest")
+    if '<noscript>' not in index_html:
+        errors.append("index.html must explain when JavaScript is disabled")
+
     for asset in (
         "/assets/app.js?v=",
         "/assets/minecraft-servers.js?v=",
