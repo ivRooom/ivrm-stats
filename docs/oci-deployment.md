@@ -5,7 +5,7 @@
 ```text
 Lightsail status-agent
   -> HTTPS + HMAC
-Caddy (stats.ivrm.jp)
+Caddy (status.ivrm.jp)
   -> ivrm-status-api:8080
 SQLite (/opt/ivrm/compose/ivrm-status-api/data/status.db)
   + Minecraft JSON read-only mount
@@ -102,7 +102,7 @@ docker exec caddy sha256sum /etc/caddy/Caddyfile
 ```bash
 docker ps --filter name=ivrm-status-api
 docker logs --tail 100 ivrm-status-api
-curl -fsS https://stats.ivrm.jp/api/status.json | jq
+curl -fsS https://status.ivrm.jp/api/status.json | jq
 ```
 
 ## Caddyバックアップ
