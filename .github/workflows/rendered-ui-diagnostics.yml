@@ -3,7 +3,10 @@ name: Rendered UI Diagnostics
 on:
   pull_request:
     paths:
-      - "assets/minecraft-servers.js"
+      - "index.html"
+      - "history/**"
+      - "assets/**"
+      - "api/**"
       - "scripts/test-minecraft-observer.mjs"
       - "scripts/check-rendered-status.mjs"
       - ".github/workflows/rendered-ui-diagnostics.yml"
@@ -34,6 +37,39 @@ jobs:
 
       - name: Test Minecraft observer
         run: node scripts/test-minecraft-observer.mjs
+
+  pull-request-rendered-ui:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify diagnostic syntax
+        run: node --check scripts/check-rendered-status.mjs
+
+      - name: Start local status site
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/ivrm-status-http.log 2>&1 &
+          echo $! > /tmp/ivrm-status-http.pid
+
+      - name: Check rendered pull request UI
+        env:
+          OUTPUT_DIR: /tmp/ivrm-status-browser-pr
+        run: node scripts/check-rendered-status.mjs http://127.0.0.1:4173/
+
+      - name: Upload pull request browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-ui-diagnostics-pr
+          path: |
+            /tmp/ivrm-status-browser-pr
+            /tmp/ivrm-status-http.log
+          if-no-files-found: warn
+          retention-days: 7
 
   rendered-ui:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
