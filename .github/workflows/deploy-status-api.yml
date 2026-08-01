@@ -140,7 +140,7 @@ jobs:
           trap 'rm -f "$response_file" "$headers_file"' EXIT
 
           for attempt in 1 2 3 4 5; do
-            url="https://stats.ivrm.jp/api/status.json?deploy=${DEPLOY_SHA}-${attempt}"
+            url="https://status.ivrm.jp/api/status.json?deploy=${DEPLOY_SHA}-${attempt}"
             http_code="$(curl --silent --show-error --max-time 15 \
               --header 'Cache-Control: no-cache' \
               --dump-header "$headers_file" \

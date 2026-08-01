@@ -1,6 +1,6 @@
 # ivRooom Status
 
-`stats.ivrm.jp` で公開する、ivRooom公式の利用者向けサービスステータスページです。
+`status.ivrm.jp` で公開する、ivRooom公式の利用者向けサービスステータスページです。
 
 Minecraftサーバー専用の運用画面ではなく、Web、API、Discord、ゲームなど複数サービスの稼働状況を同じ画面で公開できる構成です。
 

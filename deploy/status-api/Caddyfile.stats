@@ -1,4 +1,4 @@
-stats.ivrm.jp {
+status.ivrm.jp {
     route {
         @status_ingest path /api/internal/status-ingest
         reverse_proxy @status_ingest status-api:8080

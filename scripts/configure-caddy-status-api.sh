@@ -55,10 +55,17 @@ caddyfile = Path(sys.argv[1])
 snippet = Path(sys.argv[2]).read_text(encoding="utf-8").rstrip() + "\n"
 temporary = Path(sys.argv[3])
 text = caddyfile.read_text(encoding="utf-8")
-needle = "stats.ivrm.jp {"
-start = text.find(needle)
+
+start = -1
+matched_domain = None
+for domain in ("status.ivrm.jp", "stats.ivrm.jp"):
+    candidate = f"{domain} {{"
+    start = text.find(candidate)
+    if start >= 0:
+        matched_domain = domain
+        break
 if start < 0:
-    raise SystemExit("stats.ivrm.jp block was not found")
+    raise SystemExit("status.ivrm.jp block or legacy stats.ivrm.jp block was not found")
 
 brace_depth = 0
 end = None
@@ -72,7 +79,7 @@ for index in range(start, len(text)):
             end = index + 1
             break
 if end is None:
-    raise SystemExit("stats.ivrm.jp block is not balanced")
+    raise SystemExit(f"{matched_domain} block is not balanced")
 
 updated = text[:start] + snippet + text[end:].lstrip("\n")
 temporary.write_text(updated, encoding="utf-8")
