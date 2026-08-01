@@ -43,6 +43,17 @@ jobs:
           python -m pip install --requirement requirements-dev.txt
           pytest
 
+      - name: Set up OCI host Python baseline
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Validate collector on Python 3.9
+        run: |
+          python --version
+          python -m py_compile deploy/status-api/collect-minecraft-runtime.py
+          python deploy/status-api/collect-minecraft-runtime.py --help >/dev/null
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

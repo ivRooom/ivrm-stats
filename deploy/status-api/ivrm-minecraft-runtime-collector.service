@@ -5,7 +5,8 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/libexec/ivrm/collect-minecraft-runtime.py --output /opt/ivrm/www/stats/api/minecraft-runtime.json
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /usr/local/libexec/ivrm/collect-minecraft-runtime.py --output /opt/ivrm/www/stats/api/minecraft-runtime.json
 User=root
 Group=root
 NoNewPrivileges=true

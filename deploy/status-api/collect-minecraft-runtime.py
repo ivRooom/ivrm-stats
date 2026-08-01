@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +14,16 @@ MEMORY_RESERVE_MB = 512
 
 
 def docker_inspect(name: str) -> dict[str, Any] | None:
-    result = subprocess.run(
-        ["docker", "inspect", name],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", name],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     if result.returncode != 0:
         return None
     try:
@@ -197,7 +200,7 @@ def collect() -> dict[str, Any]:
     resource_router = docker_inspect("mc-resource-router")
 
     return {
-        "generatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "servers": [
             public_server(
                 server_id="mc-main",
