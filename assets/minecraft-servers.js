@@ -118,6 +118,12 @@ function formatMemory(value) {
   return `${value}MB`;
 }
 
+function setTextIfChanged(element, value) {
+  if (element && element.textContent !== value) {
+    element.textContent = value;
+  }
+}
+
 function renderCard(server) {
   const requiredMemory = formatMemory(server.requiredMemoryMb);
   return `
@@ -145,9 +151,10 @@ function updateMinecraftCopy(minecraftService, servers) {
   const mode = document.querySelector("#minecraftMode");
   if (mode && main) {
     const version = minecraftService?.meta?.serverVersion || main.version;
-    mode.textContent = version
+    const nextMode = version
       ? `生活鯖（mc-main） · Minecraft ${version}`
       : "生活鯖（mc-main）";
+    setTextIfChanged(mode, nextMode);
   }
 
   const rows = [...document.querySelectorAll(".service-row")];
@@ -157,9 +164,10 @@ function updateMinecraftCopy(minecraftService, servers) {
   const description = minecraftRow?.querySelector(".service-identity p");
   if (description && main) {
     const version = minecraftService?.meta?.serverVersion || main.version;
-    description.textContent = version
+    const nextDescription = version
       ? `生活鯖（mc-main） · Minecraft ${version}`
       : "生活鯖（mc-main）";
+    setTextIfChanged(description, nextDescription);
   }
 }
 
@@ -196,10 +204,19 @@ async function loadMinecraftServers() {
   updateMinecraftCopy(latestMinecraftService, latestServers);
 }
 
+function mutationAddsServiceRow(mutations) {
+  return mutations.some((mutation) => [...mutation.addedNodes].some((node) => {
+    if (node.nodeType !== 1) return false;
+    return node.matches?.(".service-row") || Boolean(node.querySelector?.(".service-row"));
+  }));
+}
+
 const serviceGroups = document.querySelector("#serviceGroups");
 if (serviceGroups) {
-  const observer = new MutationObserver(() => {
-    if (latestServers.length) updateMinecraftCopy(latestMinecraftService, latestServers);
+  const observer = new MutationObserver((mutations) => {
+    if (latestServers.length && mutationAddsServiceRow(mutations)) {
+      updateMinecraftCopy(latestMinecraftService, latestServers);
+    }
   });
   observer.observe(serviceGroups, { childList: true, subtree: true });
 }
