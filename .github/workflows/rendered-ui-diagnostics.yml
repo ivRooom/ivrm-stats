@@ -5,7 +5,7 @@ on:
     paths:
       - "index.html"
       - "assets/**"
-      - "scripts/check-rendered-status.sh"
+      - "scripts/check-rendered-status.mjs"
       - ".github/workflows/rendered-ui-diagnostics.yml"
   workflow_dispatch:
 
@@ -15,17 +15,17 @@ permissions:
 jobs:
   rendered-ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify script syntax
-        run: bash -n scripts/check-rendered-status.sh
+      - name: Verify diagnostic syntax
+        run: node --check scripts/check-rendered-status.mjs
 
       - name: Check rendered production UI
-        run: bash scripts/check-rendered-status.sh https://status.ivrm.jp/
+        run: node scripts/check-rendered-status.mjs https://status.ivrm.jp/
 
       - name: Upload browser diagnostics
         if: always()
