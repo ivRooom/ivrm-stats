@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -20,12 +21,19 @@ def run(command: list[str], timeout: int = 10) -> subprocess.CompletedProcess[st
         return None
 
 
-def docker_inspect(name: str) -> dict[str, Any] | None:
-    result = run(["docker", "inspect", name])
+def command_text(command: list[str], timeout: int = 10) -> str | None:
+    result = run(command, timeout)
     if result is None or result.returncode != 0:
         return None
+    return result.stdout.strip()
+
+
+def docker_inspect(name: str) -> dict[str, Any] | None:
+    output = command_text(["docker", "inspect", name])
+    if output is None:
+        return None
     try:
-        payload = json.loads(result.stdout)
+        payload = json.loads(output)
     except json.JSONDecodeError:
         return None
     return payload[0] if isinstance(payload, list) and payload else None
@@ -114,6 +122,51 @@ def published_port(inspect: dict[str, Any] | None, container_port: str) -> bool:
     return isinstance(values, list) and any(item.get("HostPort") for item in values if isinstance(item, dict))
 
 
+def parse_mc_monitor(output: str | None) -> dict[str, Any]:
+    if not output:
+        return {"reachable": False}
+    version = re.search(r"version[=:]\s*([^\n]+?)(?=\s+online[=:]|$)", output, re.IGNORECASE)
+    online = re.search(r"online[=:]\s*(\d+)", output, re.IGNORECASE)
+    maximum = re.search(r"max[=:]\s*(\d+)", output, re.IGNORECASE)
+    latency = re.search(r"latency[=:]\s*(\d+)", output, re.IGNORECASE)
+    payload: dict[str, Any] = {"reachable": True}
+    if version:
+        payload["version"] = version.group(1).strip()
+    if online:
+        payload["online"] = int(online.group(1))
+    if maximum:
+        payload["max"] = int(maximum.group(1))
+    if latency:
+        payload["latencyMs"] = int(latency.group(1))
+    return payload
+
+
+def minecraft_probe(container: str, host: str, port: int) -> dict[str, Any]:
+    output = command_text([
+        "docker", "exec", container, "mc-monitor", "status",
+        "--host", host, "--port", str(port),
+    ], timeout=12)
+    return parse_mc_monitor(output)
+
+
+def parse_rcon_players(output: str | None) -> dict[str, Any]:
+    if not output:
+        return {"available": False, "online": None, "max": None}
+    match = re.search(r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online", output, re.IGNORECASE)
+    if not match:
+        return {"available": False, "online": None, "max": None}
+    return {"available": True, "online": int(match.group(1)), "max": int(match.group(2))}
+
+
+def rcon_players() -> dict[str, Any]:
+    return parse_rcon_players(command_text(["docker", "exec", "mc-main", "rcon-cli", "list"], timeout=10))
+
+
+def voice_chat_started() -> bool:
+    output = command_text(["docker", "logs", "--tail", "2000", "mc-main"], timeout=10)
+    return bool(output and re.search(r"Voice chat server started at port\s+24454", output, re.IGNORECASE))
+
+
 def public_server(*, server_id: str, name: str, role: str, connection: str, inspect: dict[str, Any] | None, available_mb: int | None, router: dict[str, Any] | None = None) -> dict[str, Any]:
     environment = env_map(inspect)
     state, health, running, oom_killed, exit_code = runtime_state(inspect)
@@ -158,21 +211,30 @@ def public_server(*, server_id: str, name: str, role: str, connection: str, insp
     return payload
 
 
-def proxy_status(inspect: dict[str, Any] | None) -> dict[str, Any]:
+def proxy_status(inspect: dict[str, Any] | None, probe: dict[str, Any]) -> dict[str, Any]:
     state, health, running, oom_killed, exit_code = runtime_state(inspect)
-    healthy = running and health not in {"unhealthy", "starting"} and published_port(inspect, "25565/tcp")
+    port_ready = published_port(inspect, "25565/tcp")
+    healthy = running and health not in {"unhealthy", "starting"} and port_ready and probe.get("reachable") is True
     payload: dict[str, Any] = {
         "id": "ivrm-velocity", "name": "Minecraft 接続プロキシ", "role": "proxy",
         "connection": "mc.ivrm.jp", "containerState": state, "health": health,
         "runtimeStatus": "running" if healthy else ("starting" if running and health == "starting" else "unhealthy" if running else "stopped"),
         "startability": "started" if running else "unavailable", "startable": running,
-        "reason": "Velocityは正常に公開ポートを待受しています" if healthy else "Velocityの稼働状態または公開ポートを確認できません",
+        "reason": "Velocityは公開Minecraft Pingへ応答しています" if healthy else "Velocityの公開応答を確認できません",
         "restartCount": restart_count(inspect), "oomKilled": oom_killed,
-        "publicPort": 25565, "publicPortPublished": published_port(inspect, "25565/tcp"),
+        "publicPort": 25565, "publicPortPublished": port_ready, "probe": probe,
     }
     if exit_code is not None:
         payload["lastExitCode"] = exit_code
     return payload
+
+
+def classify_status(proxy: dict[str, Any], backend_probe: dict[str, Any], voice: dict[str, Any]) -> str:
+    if proxy.get("runtimeStatus") != "running" or backend_probe.get("reachable") is not True:
+        return "major_outage"
+    if voice.get("status") != "operational":
+        return "partial_outage"
+    return "operational"
 
 
 def collect() -> dict[str, Any]:
@@ -181,12 +243,35 @@ def collect() -> dict[str, Any]:
     velocity = docker_inspect("ivrm-velocity")
     resource = docker_inspect("mc-resource")
     resource_router = docker_inspect("mc-resource-router")
+
+    public_probe = minecraft_probe("ivrm-velocity", "127.0.0.1", 25565)
+    backend_probe = minecraft_probe("ivrm-velocity", "mc-main", 25565)
+    players = rcon_players()
+    voice = {
+        "id": "minecraft-voice-chat",
+        "name": "Minecraft ボイスチャット",
+        "protocol": "udp",
+        "port": 24454,
+        "listening": published_port(main, "24454/udp"),
+        "started": voice_chat_started(),
+    }
+    voice["status"] = "operational" if voice["listening"] and voice["started"] else "outage"
+    proxy = proxy_status(velocity, public_probe)
+
     return {
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "topology": {"publicEndpoint": "mc.ivrm.jp:25565", "proxy": "ivrm-velocity", "backend": "mc-main:25565", "legacyPort25566Enabled": False},
-        "voiceChat": {"id": "minecraft-voice-chat", "name": "Minecraft ボイスチャット", "protocol": "udp", "port": 24454, "listening": published_port(main, "24454/udp"), "status": "operational" if published_port(main, "24454/udp") else "outage"},
+        "status": classify_status(proxy, backend_probe, voice),
+        "topology": {
+            "publicEndpoint": "mc.ivrm.jp:25565",
+            "proxy": "ivrm-velocity",
+            "backend": "mc-main:25565",
+            "legacyPort25566Enabled": False,
+        },
+        "probes": {"publicMinecraft": public_probe, "proxyToBackend": backend_probe},
+        "players": players,
+        "voiceChat": voice,
         "servers": [
-            proxy_status(velocity),
+            proxy,
             public_server(server_id="mc-main", name="生活鯖", role="main", connection="mc.ivrm.jp", inspect=main, available_mb=available_mb),
             public_server(server_id="mc-resource", name="資源鯖", role="resource", connection="mc.ivrm.jp:25999", inspect=resource, router=resource_router, available_mb=available_mb),
         ],
