@@ -135,3 +135,41 @@ def test_resource_is_unavailable_when_memory_is_insufficient(tmp_path: Path) -> 
 def test_memory_parser_supports_gigabytes_and_megabytes() -> None:
     assert collector.parse_memory_mb("4G") == 4_096
     assert collector.parse_memory_mb("2048M") == 2_048
+
+
+def test_mc_monitor_output_is_parsed() -> None:
+    result = collector.parse_mc_monitor(
+        "version=Velocity 1.7.2-26.2 online=3 max=10 latency=42"
+    )
+    assert result == {
+        "reachable": True,
+        "version": "Velocity 1.7.2-26.2",
+        "online": 3,
+        "max": 10,
+        "latencyMs": 42,
+    }
+
+
+def test_failed_mc_monitor_is_unreachable() -> None:
+    assert collector.parse_mc_monitor(None) == {"reachable": False}
+
+
+def test_rcon_player_count_is_parsed_without_names() -> None:
+    result = collector.parse_rcon_players(
+        "There are 2 of a max of 10 players online: player-a, player-b"
+    )
+    assert result == {"available": True, "online": 2, "max": 10}
+    assert "player-a" not in str(result)
+
+
+def test_status_classification() -> None:
+    proxy = {"runtimeStatus": "running"}
+    backend = {"reachable": True}
+    voice = {"status": "operational"}
+    assert collector.classify_status(proxy, backend, voice) == "operational"
+
+    voice["status"] = "outage"
+    assert collector.classify_status(proxy, backend, voice) == "partial_outage"
+
+    backend["reachable"] = False
+    assert collector.classify_status(proxy, backend, voice) == "major_outage"
